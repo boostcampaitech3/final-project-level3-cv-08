@@ -64,4 +64,5 @@ YOLOP
 │ │ ├─datapre    # Generation of gt(mask) for drivable area segmentation task
 ├─weights    # Pretraining model
 ```
-tools/train.py로 학습 
+tools/train.py로 학습
+lib/config/default.py를 통해 각종 하이퍼 파라미터나 Pretrained, Freeze등을 지정해 줄 수 있다.
