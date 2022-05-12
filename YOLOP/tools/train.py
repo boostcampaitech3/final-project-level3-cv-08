@@ -79,7 +79,7 @@ def main():
     world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
     global_rank = int(os.environ['RANK']) if 'RANK' in os.environ else -1
 
-    rank = global_rank
+    rank = global_rank # rank = -1
     #print(rank)
     # TODO: handle distributed training logger
     # set the logger, tb_log_dir means tensorboard logdir
@@ -89,7 +89,7 @@ def main():
 
     if rank in [-1, 0]:
         logger.info(pprint.pformat(args))
-        logger.info(cfg)
+        logger.info(cfg) # print(cfg)
 
         writer_dict = {
             'writer': SummaryWriter(log_dir=tb_log_dir),

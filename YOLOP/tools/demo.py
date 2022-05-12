@@ -29,7 +29,9 @@ from lib.core.function import AverageMeter
 from lib.core.postprocess import morphological_process, connect_lane
 from tqdm import tqdm
 normalize = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        #mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        # kitti 
+        mean=[0.362, 0.404, 0.398], std=[0.236, 0.274, 0.306]
     )
 
 transform=transforms.Compose([
@@ -166,7 +168,7 @@ def detect(cfg,opt):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='weights/End-to-end.pth', help='model.pth path(s)')
-    parser.add_argument('--source', type=str, default='inference/videos', help='source')  # file/folder   ex:inference/images
+    parser.add_argument('--source', type=str, default='inference/images', help='source')  # file/folder   ex:inference/images
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
