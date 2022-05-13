@@ -3,6 +3,8 @@ from lib.core.evaluate import ConfusionMatrix,SegmentationMetric
 from lib.core.general import non_max_suppression,check_img_size,scale_coords,xyxy2xywh,xywh2xyxy,box_iou,coco80_to_coco91_class,plot_images,ap_per_class,output_to_target
 from lib.utils.utils import time_synchronized
 from lib.utils import plot_img_and_mask,plot_one_box,show_seg_result
+from lib.utils.utils import save_checkpoint
+import glob
 import torch
 from threading import Thread
 import numpy as np
@@ -41,6 +43,13 @@ def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_bat
     None
 
     """
+    try:
+        import wandb
+        wandb.init(project='YOLOP', entity='hbage')
+    except ImportError:
+        wandb = None
+        log_imgs = 0
+    
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -62,8 +71,10 @@ def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_bat
             for j, x in enumerate(optimizer.param_groups):
                 # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
                 x['lr'] = np.interp(num_iter, xi, [cfg.TRAIN.WARMUP_BIASE_LR if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
+                wandb.log({"learning rate": x['lr']})
                 if 'momentum' in x:
                     x['momentum'] = np.interp(num_iter, xi, [cfg.TRAIN.WARMUP_MOMENTUM, cfg.TRAIN.MOMENTUM])
+                    wandb.log({"momentum": x['momentum']})
 
         data_time.update(time.time() - start)
         if not cfg.DEBUG:
@@ -110,7 +121,17 @@ def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_bat
                 writer.add_scalar('train_loss', losses.val, global_steps)
                 # writer.add_scalar('train_acc', acc.val, global_steps)
                 writer_dict['train_global_steps'] = global_steps + 1
-
+        
+        save_checkpoint(
+                epoch=epoch,
+                name=cfg.MODEL.NAME,
+                model=model,
+                # 'best_state_dict': model.module.state_dict(),
+                # 'perf': perf_indicator,
+                optimizer=optimizer,
+                output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
+                filename='checkpoint.pth'
+            )
 
 def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir,
              tb_log_dir, writer_dict=None, logger=None, device='cpu', rank=-1):
@@ -127,6 +148,13 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     Return:
     None
     """
+    try:
+        import wandb
+        wandb.init(project='YOLOP', entity='hbage')
+    except ImportError:
+        wandb = None
+        log_imgs = 0
+
     # setting
     max_stride = 32
     weights = None
@@ -144,17 +172,12 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     save_conf=False # save auto-label confidences
     verbose=False
     save_hybrid=False
-    log_imgs,wandb = min(16,100), None
+    log_imgs = min(16,100)
 
-    nc = 1
+    nc = 13
     iouv = torch.linspace(0.5,0.95,10).to(device)     #iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
-    try:
-        import wandb
-    except ImportError:
-        wandb = None
-        log_imgs = 0
 
     seen =  0 
     confusion_matrix = ConfusionMatrix(nc=model.nc) #detector confusion matrix
@@ -297,7 +320,6 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
                         if len(det):
                             det[:,:4] = scale_coords(img[i].shape[1:],det[:,:4],img_det.shape).round()
                         for *xyxy,conf,cls in reversed(det):
-                            #print(cls)
                             label_det_pred = f'{names[int(cls)]} {conf:.2f}'
                             plot_one_box(xyxy, img_det , label=label_det_pred, color=colors[int(cls)], line_thickness=3)
                         cv2.imwrite(save_dir+"/batch_{}_{}_det_pred.png".format(epoch,i),img_det)
@@ -441,9 +463,9 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     # Plots
     if config.TEST.PLOTS:
         confusion_matrix.plot(save_dir=save_dir, names=list(names.values()))
-        if wandb and wandb.run:
+        if wandb.run:
             wandb.log({"Images": wandb_images})
-            wandb.log({"Validation": [wandb.Image(str(f), caption=f.name) for f in sorted(save_dir.glob('test*.jpg'))]})
+            wandb.log({"Validation": [wandb.Image(str(f), caption=f.name) for f in sorted(glob.glob(os.path.join(path, '*result.png')))]})
 
     # Save JSON
     if config.TEST.SAVE_JSON and len(jdict):
