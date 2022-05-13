@@ -362,6 +362,7 @@ def main():
 
         # save checkpoint model and best model
         if rank in [-1, 0]:
+            """
             savepath = os.path.join(final_output_dir, f'epoch-{epoch}.pth')
             logger.info('=> saving checkpoint to {}'.format(savepath))
             save_checkpoint(
@@ -384,6 +385,71 @@ def main():
                 output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
                 filename='checkpoint.pth'
             )
+            """
+            savepath = os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET)
+            logger.info('=> saving checkpoint to {}'.format(savepath))
+            save_checkpoint(
+                epoch=epoch,
+                name=cfg.MODEL.NAME,
+                model=model,
+                # 'best_state_dict': model.module.state_dict(),
+                # 'perf': perf_indicator,
+                optimizer=optimizer,
+                output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
+                filename='checkpoint.pth'
+            )
+
+            # if you train all incoder and heads, save checkpoint when all of mIoU are best
+            train_all = cfg.TRAIN.SEG_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.ENC_DET_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == False
+            
+            if train_all:
+                best_score = 0
+                if da_segment_results[2] + ll_segment_results[2] + detect_results[2] > best_score:
+                    best_score = da_segment_results[2] + ll_segment_results[2] + detect_results[2]
+                    save_checkpoint(
+                        epoch=epoch,
+                        name=cfg.MODEL.NAME,
+                        model=model,
+                        # 'best_state_dict': model.module.state_dict(),
+                        # 'perf': perf_indicator,
+                        optimizer=optimizer,
+                        output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
+                        filename='model_best_train_all.pth'
+                    )
+            # if you train without seg, save checkpoint when det_mAP is best
+            train_without_seg = cfg.TRAIN.ENC_DET_ONLY == True and cfg.TRAIN.SEG_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == False
+
+            if train_without_seg:
+                best_score = 0
+                if detect_results[2] > best_score:
+                    best_score = detect_results[2]
+                    save_checkpoint(
+                        epoch=epoch,
+                        name=cfg.MODEL.NAME,
+                        model=model,
+                        # 'best_state_dict': model.module.state_dict(),
+                        # 'perf': perf_indicator,
+                        optimizer=optimizer,
+                        output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
+                        filename='model_best_train_enc_det_only.pth'
+                    )
+            # if you train only seg branches, save checkpoint when seg_mIoU are best
+            train_only_seg = cfg.TRAIN.SEG_ONLY == True and cfg.TRAIN.ENC_DET_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == False
+
+            if train_only_seg:
+                best_score = 0
+                if da_segment_results[2] + ll_segment_results[2] > best_score:
+                    best_score = da_segment_results[2] + ll_segment_results[2]
+                    save_checkpoint(
+                        epoch=epoch,
+                        name=cfg.MODEL.NAME,
+                        model=model,
+                        # 'best_state_dict': model.module.state_dict(),
+                        # 'perf': perf_indicator,
+                        optimizer=optimizer,
+                        output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
+                        filename='model_best_train_seg_only.pth'
+                    )
 
     # save final model
     if rank in [-1, 0]:
