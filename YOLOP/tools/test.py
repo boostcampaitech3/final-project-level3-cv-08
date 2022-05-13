@@ -36,7 +36,7 @@ def parse_args():
                         help='log directory',
                         type=str,
                         default='runs/')
-    parser.add_argument('--weights', nargs='+', type=str, default='/data2/zwt/wd/YOLOP/runs/BddDataset/detect_and_segbranch_whole/epoch-169.pth', help='model.pth path(s)')
+    parser.add_argument('--weights', nargs='+', type=str, default='/opt/ml/final-project-level3-cv-08/YOLOP/runs/BddDataset/checkpoint.pth', help='model.pth path(s)')
     parser.add_argument('--conf_thres', type=float, default=0.001, help='object confidence threshold')
     parser.add_argument('--iou_thres', type=float, default=0.6, help='IOU threshold for NMS')
     args = parser.parse_args()
@@ -44,9 +44,17 @@ def parse_args():
     return args
 
 def main():
+    try:
+        import wandb
+        wandb.init(project='YOLOP', entity='hbage', name='test')
+    except ImportError:
+        wandb = None
+        log_imgs = 0
+
     # set all the configurations
     args = parse_args()
     update_config(cfg, args)
+    wandb.config.update(cfg)
 
     # TODO: handle distributed training logger
     # set the logger, tb_log_dir means tensorboard logdir
@@ -92,7 +100,7 @@ def main():
 
     model = model.to(device)
     model.gr = 1.0
-    model.nc = 1
+    model.nc = 13
     print('bulid model finished')
 
     print("begin to load data")
@@ -133,7 +141,7 @@ def main():
     da_segment_results,ll_segment_results,detect_results, total_loss,maps, times = validate(
         epoch,cfg, valid_loader, valid_dataset, model, criterion,
         final_output_dir, tb_log_dir, writer_dict,
-        logger, device
+        logger, device, wandb=wandb
     )
     fi = fitness(np.array(detect_results).reshape(1, -1))
     msg =   'Test:    Loss({loss:.3f})\n' \

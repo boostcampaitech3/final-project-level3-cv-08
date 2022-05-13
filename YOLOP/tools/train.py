@@ -72,8 +72,17 @@ def parse_args():
 
 def main():
     # set all the configurations
+    try:
+        import wandb
+        wandb.init(project='YOLOP', entity='hbage', name='train')
+    except ImportError:
+        wandb = None
+        log_imgs = 0
+
+
     args = parse_args()
     update_config(cfg, args)
+    wandb.config.update(cfg)
 
     # Set DDP variables
     world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
@@ -127,7 +136,7 @@ def main():
     # define loss function (criterion) and optimizer
     criterion = get_loss(cfg, device=device)
     optimizer = get_optimizer(cfg, model)
-
+    wandb.watch(model, criterion=criterion, log='all')
 
     # load checkpoint model
     best_perf = 0.0
@@ -249,7 +258,7 @@ def main():
 
     # assign model params
     model.gr = 1.0
-    model.nc = 1
+    model.nc = 13
     # print('bulid model finished')
 
     print("begin to load data")
@@ -320,7 +329,7 @@ def main():
             train_loader.sampler.set_epoch(epoch)
         # train for one epoch
         train(cfg, train_loader, model, criterion, optimizer, scaler,
-              epoch, num_batch, num_warmup, writer_dict, logger, device, rank)
+              epoch, num_batch, num_warmup, writer_dict, logger, device, rank, wandb=wandb)
         
         lr_scheduler.step()
 
@@ -330,7 +339,7 @@ def main():
             da_segment_results,ll_segment_results,detect_results, total_loss,maps, times = validate(
                 epoch,cfg, valid_loader, valid_dataset, model, criterion,
                 final_output_dir, tb_log_dir, writer_dict,
-                logger, device, rank
+                logger, device, rank, wandb=wandb
             )
             fi = fitness(np.array(detect_results).reshape(1, -1))  #目标检测评价指标
 

@@ -21,7 +21,7 @@ from tqdm import tqdm
 
 
 def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_batch, num_warmup,
-          writer_dict, logger, device, rank=-1):
+          writer_dict, logger, device, rank=-1, wandb=None):
     """
     train for one epoch
 
@@ -43,12 +43,6 @@ def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_bat
     None
 
     """
-    try:
-        import wandb
-        wandb.init(project='YOLOP', entity='hbage')
-    except ImportError:
-        wandb = None
-        log_imgs = 0
     
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -134,7 +128,7 @@ def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_bat
             )
 
 def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir,
-             tb_log_dir, writer_dict=None, logger=None, device='cpu', rank=-1):
+             tb_log_dir, writer_dict=None, logger=None, device='cpu', rank=-1, wandb=None):
     """
     validata
 
@@ -148,13 +142,6 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     Return:
     None
     """
-    try:
-        import wandb
-        wandb.init(project='YOLOP', entity='hbage')
-    except ImportError:
-        wandb = None
-        log_imgs = 0
-
     # setting
     max_stride = 32
     weights = None
@@ -373,7 +360,8 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
                              "scores": {"class_score": conf},
                              "domain": "pixel"} for *xyxy, conf, cls in pred.tolist()]
                 boxes = {"predictions": {"box_data": box_data, "class_labels": names}}  # inference-space
-                wandb_images.append(wandb.Image(img[si], boxes=boxes, caption=path.name))
+                if wandb:
+                    wandb_images.append(wandb.Image(img[si], boxes=boxes, caption=path.name))
 
             # Append to pycocotools JSON dictionary
             if config.TEST.SAVE_JSON:
@@ -463,7 +451,7 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     # Plots
     if config.TEST.PLOTS:
         confusion_matrix.plot(save_dir=save_dir, names=list(names.values()))
-        if wandb.run:
+        if wandb:
             wandb.log({"Images": wandb_images})
             wandb.log({"Validation": [wandb.Image(str(f), caption=f.name) for f in sorted(glob.glob(os.path.join(path, '*result.png')))]})
 
