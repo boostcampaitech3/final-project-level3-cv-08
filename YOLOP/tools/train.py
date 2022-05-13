@@ -6,6 +6,7 @@ sys.path.append(BASE_DIR)
 
 import pprint
 import time
+import datetime
 import torch
 import torch.nn.parallel
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -325,6 +326,7 @@ def main():
     scaler = amp.GradScaler(enabled=device.type != 'cpu')
     print('=> start training...')
     for epoch in range(begin_epoch+1, cfg.TRAIN.END_EPOCH+1):
+        start = time.time()
         if rank != -1:
             train_loader.sampler.set_epoch(epoch)
         # train for one epoch
@@ -401,7 +403,7 @@ def main():
 
             # if you train all incoder and heads, save checkpoint when all of mIoU are best
             train_all = cfg.TRAIN.SEG_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.ENC_DET_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == False
-            
+
             if train_all:
                 best_score = 0
                 if da_segment_results[2] + ll_segment_results[2] + detect_results[2] > best_score:
@@ -450,6 +452,9 @@ def main():
                         output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
                         filename='model_best_train_seg_only.pth'
                     )
+        sec = time.time() - start
+        result = datetime.timedelta(seconds=sec)
+        print(f'------- {result} -------')
 
     # save final model
     if rank in [-1, 0]:
