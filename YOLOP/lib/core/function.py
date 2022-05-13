@@ -433,6 +433,8 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
         nt = torch.zeros(1)
 
     # Print results
+    pf = '%20s' + '%12s' * 7  # print format
+    print(pf % ('Class', 'seen', 'predictions', 'precision', 'recall', 'mAP50', 'mAP'), "\n")
     pf = '%20s' + '%12.3g' * 6  # print format
     print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
     #print(map70)
