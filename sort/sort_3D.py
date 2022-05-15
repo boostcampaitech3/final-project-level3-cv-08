@@ -74,7 +74,7 @@ def centerPointBatch(bb_test, bb_gt):
 
 def convert_bbox_to_z(bbox):
   """
-  Takes a bounding box in the form [x,y, rot, w, l, score] and returns z in the form
+  Takes a bounding box in the form [x, y, rot, w, l, score] and returns z in the form
     [x,y,rot,w, l] where x,y is the centre of the box and s is the scale/area and r is
     the aspect ratio
   """
@@ -131,6 +131,14 @@ class KalmanBoxTracker(object):
         self.hit_streak = 0
         self.age = 0
 
+    def calib_rotation_y(self):
+        if self.kf.x[2] > np.pi:
+            self.kf.x[2] = -np.pi + (self.kf.x[2] - np.pi)
+        elif self.kf.x[2] <= -np.pi:
+            self.kf.x[2] = np.pi - (-np.pi - self.kf.x[2])
+        
+        return
+
     def update(self,bbox):
         """
         Updates the state vector with observed bbox.
@@ -140,6 +148,8 @@ class KalmanBoxTracker(object):
         self.hits += 1
         self.hit_streak += 1
         self.kf.update(convert_bbox_to_z(bbox))
+        self.calib_rotation_y()
+            
 
     def predict(self):
         """
@@ -148,6 +158,10 @@ class KalmanBoxTracker(object):
         # if((self.kf.x[6]+self.kf.x[2])<=0):
         #     self.kf.x[6] *= 0.0
         self.kf.predict()
+
+        # 각도가 pi보다 크거나, -pi보다 작거나 같을 때 생기는 문제점 해결  
+        self.calib_rotation_y()
+
         self.age += 1
         if(self.time_since_update>0):
             self.hit_streak = 0
@@ -160,6 +174,8 @@ class KalmanBoxTracker(object):
         Returns the current bounding box estimate.
         """
         return convert_x_to_bbox(self.kf.x)[0], self.cls_id
+
+    
 
 # 80km/h라고 하고 24fps로 영상을 가져온다고 했을 때, 
 # 1 frame당 이동거리는 0.109m이다. 
@@ -175,13 +191,12 @@ def associate_detections_to_trackers(detections,trackers,centerpoint_threshold =
         return np.empty((0,2),dtype=int), np.arange(len(detections)), np.empty((0,6),dtype=int)
 
     centerpoint_matrix = centerPointBatch(detections, trackers)
-    
     if min(centerpoint_matrix.shape) > 0:
         a = (centerpoint_matrix < centerpoint_threshold).astype(np.int32)
         if a.sum(1).max() == 1 and a.sum(0).max() == 1:
             matched_indices = np.stack(np.where(a), axis=1)
         else:
-            matched_indices = linear_assignment(-centerpoint_matrix)
+            matched_indices = linear_assignment(centerpoint_matrix)
     else:
         matched_indices = np.empty(shape=(0,2))
 
@@ -348,7 +363,11 @@ def load_kitti_label(label_file):
         bbox.append([float(line[6]), float(line[7]), float(line[8]), float(line[9])])
         dimensions.append([float(line[10]), float(line[11]), float(line[12])])
         location.append([float(line[13]), float(line[14]), float(line[15])])
-        rotation_y.append(float(line[16]))
+
+        if float(line[16]) <= -np.pi:
+            rotation_y.append(np.pi)
+        else:
+            rotation_y.append(float(line[16]))
         difficulty.append(0)
 
         if name != 'DontCare':
