@@ -440,11 +440,11 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
     #print(map70)
     #print(map75)
-
+    class_names = ['person', 'rider', 'car', 'bus', 'truck', 'bike', 'motor', 'tl_green', 'tl_red', 'tl_yellow', 'tl_none', 'traffic sign', 'train']
     # Print results per class
     if (verbose or (nc <= 20 and not training)) and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):
-            print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+            print(pf % (class_names[int(names[c])], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
 
     # Print speeds
     t = tuple(x / seen * 1E3 for x in (t_inf, t_nms, t_inf + t_nms)) + (imgsz, imgsz, batch_size)  # tuple
