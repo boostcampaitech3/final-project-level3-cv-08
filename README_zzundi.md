@@ -26,4 +26,5 @@ http://www.cvlibs.net/datasets/kitti/raw_data.php
 예시
 </p>
 velo_path = '/opt/ml/KITTI_Tutorial/2011_09_29/2011_09_26_drive_0013_sync/velodyne_points/data'
+</p>
 xml_path = '/opt/ml/KITTI_Tutorial/2011_09_29/2011_09_26_drive_0013_sync/tracklet_labels.xml'
