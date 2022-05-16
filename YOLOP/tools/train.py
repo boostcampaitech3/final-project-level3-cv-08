@@ -137,7 +137,6 @@ def main():
     # define loss function (criterion) and optimizer
     criterion = get_loss(cfg, device=device)
     optimizer = get_optimizer(cfg, model)
-    wandb.watch(model, criterion=criterion, log='all')
 
     # load checkpoint model
     best_perf = 0.0
