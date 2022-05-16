@@ -417,6 +417,7 @@ def main():
                         output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
                         filename='model_best_train_all.pth'
                     )
+                    logger.info(f"=> saving best model_epoch{epoch}...")
             # if you train without seg, save checkpoint when det_mAP is best
             train_without_seg = cfg.TRAIN.ENC_DET_ONLY == True and cfg.TRAIN.SEG_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == False
 
@@ -434,6 +435,7 @@ def main():
                         output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
                         filename='model_best_train_enc_det_only.pth'
                     )
+                    logger.info(f"=> saving best model_epoch{epoch}...")
             # if you train only seg branches, save checkpoint when seg_mIoU are best
             train_only_seg = cfg.TRAIN.SEG_ONLY == True and cfg.TRAIN.ENC_DET_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == False
 
@@ -451,6 +453,7 @@ def main():
                         output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
                         filename='model_best_train_seg_only.pth'
                     )
+                    logger.info(f"=> saving best model_epoch{epoch}...")
         sec = time.time() - start
         result = datetime.timedelta(seconds=sec)
         print(f'------- {result} -------')

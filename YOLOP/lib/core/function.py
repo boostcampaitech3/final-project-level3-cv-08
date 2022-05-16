@@ -455,6 +455,7 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     if config.TEST.PLOTS:
         confusion_matrix.plot(save_dir=save_dir, names=list(names.values()))
         if wandb:
+            print("logging for validation to wandb...")
             wandb.log({"Images": wandb_images})
             wandb.log({"Validation": [wandb.Image(str(f), caption=f.name) for f in sorted(glob.glob(os.path.join(path, '*result.png')))]})
 
