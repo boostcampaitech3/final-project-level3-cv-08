@@ -22,5 +22,6 @@ http://www.cvlibs.net/datasets/kitti/raw_data.php
 </p>  
 
 각 ipynb파일에서 경로만 dataset과 잘 설정해서 돌려주면 됨
-ex: velo_path = '/opt/ml/KITTI_Tutorial/2011_09_29/2011_09_26_drive_0013_sync/velodyne_points/data'
-    xml_path = '/opt/ml/KITTI_Tutorial/2011_09_29/2011_09_26_drive_0013_sync/tracklet_labels.xml'
+예시
+velo_path = '/opt/ml/KITTI_Tutorial/2011_09_29/2011_09_26_drive_0013_sync/velodyne_points/data'
+xml_path = '/opt/ml/KITTI_Tutorial/2011_09_29/2011_09_26_drive_0013_sync/tracklet_labels.xml'
