@@ -26,7 +26,7 @@ _C.MODEL = CN(new_allowed=True)
 _C.MODEL.NAME = ''
 _C.MODEL.STRU_WITHSHARE = False     #add share_block to segbranch
 _C.MODEL.HEADS_NAME = ['']
-_C.MODEL.PRETRAINED = "/opt/ml/final-project-level3-cv-08/YOLOP/weights/End-to-end.pth"
+_C.MODEL.PRETRAINED = "" # trained parameter /opt/ml/final-project-level3-cv-08/YOLOP/weights/End-to-end.pth
 _C.MODEL.PRETRAINED_DET = ""
 _C.MODEL.IMAGE_SIZE = [640, 640]  # width * height, ex: 192 * 256
 _C.MODEL.EXTRA = CN(new_allowed=True)
@@ -104,7 +104,7 @@ _C.TRAIN.ANCHOR_THRESHOLD = 4.0
 _C.TRAIN.SEG_ONLY = False           # Only train two segmentation branchs
 _C.TRAIN.DET_ONLY = False           # Only train detection branch
 _C.TRAIN.ENC_SEG_ONLY = False       # Only train encoder and two segmentation branchs
-_C.TRAIN.ENC_DET_ONLY = False       # Only train encoder and detection branch
+_C.TRAIN.ENC_DET_ONLY = True       # Only train encoder and detection branch
 
 # Single task 
 _C.TRAIN.DRIVABLE_ONLY = False      # Only train da_segmentation task
