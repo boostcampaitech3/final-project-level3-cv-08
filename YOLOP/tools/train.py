@@ -333,6 +333,7 @@ def main():
               epoch, num_batch, num_warmup, writer_dict, logger, device, rank, wandb=wandb)
         
         lr_scheduler.step()
+        wandb.log({"learning rate": lr_scheduler.get_last_lr()})
 
         # evaluate on validation set
         if (epoch % cfg.TRAIN.VAL_FREQ == 0 or epoch == cfg.TRAIN.END_EPOCH) and rank in [-1, 0]:
