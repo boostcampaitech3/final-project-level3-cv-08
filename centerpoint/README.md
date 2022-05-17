@@ -39,7 +39,7 @@
 
     [여기](https://github.com/open-mmlab/mmdetection3d/tree/master/configs/centerpoint)에서 아래 빨간색으로 표시한 weight file 다운로드
 
-    ![image-20220517194259563](C:\Users\Administrator1\AppData\Roaming\Typora\typora-user-images\image-20220517194259563.png)
+    ![image](https://user-images.githubusercontent.com/71866756/168803366-5867835d-cc17-447c-a50e-d5f097500cc8.png)
 
   - Step4. 현재 모델 pth랑 모델 구조랑 조금 다른 부분이 있다. (point pillar 구조가 바뀌었는데 pth파일이 update가 안되어 있다고 한다.)
 
