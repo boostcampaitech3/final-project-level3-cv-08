@@ -73,3 +73,6 @@ YOLOP
 * 그리고 143번째 줄에서는 show_seg_result()를 통해 da_seg_mask, ll_seg_mask를 받아서 이미지상에 segmentation을 그리고 작아진 이미지를 cv.resize를 통해 이미지크기를 키운다.(이 두개의 Mask들은 0과 1로 이루어져있다.)
 
 * demo를 실행시키기 위해서는 demo.py의 171번째 줄 Source의 경로를 이미지폴더나 동영상 폴더로 주면 된다.
+
+### Demo 영상
+![Demo](pictures/output1.gif)
