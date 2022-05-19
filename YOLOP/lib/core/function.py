@@ -65,7 +65,6 @@ def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_bat
             for j, x in enumerate(optimizer.param_groups):
                 # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
                 x['lr'] = np.interp(num_iter, xi, [cfg.TRAIN.WARMUP_BIASE_LR if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
-                wandb.log({"learning rate": x['lr']})
                 #if 'momentum' in x:
                 #    x['momentum'] = np.interp(num_iter, xi, [cfg.TRAIN.WARMUP_MOMENTUM, cfg.TRAIN.MOMENTUM])
                 #    wandb.log({"momentum": x['momentum']})
@@ -95,6 +94,7 @@ def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_bat
         scaler.scale(total_loss).backward()
         scaler.step(optimizer)
         scaler.update()
+        wandb.log({"learning rate": optimizer.param_groups[0]['lr']})
 
         if rank in [-1, 0]:
             # measure accuracy and record loss
