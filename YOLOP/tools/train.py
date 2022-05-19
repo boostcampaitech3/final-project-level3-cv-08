@@ -86,10 +86,10 @@ def main():
     wandb.config.update(cfg)
 
     # Set DDP variables
-    world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
-    global_rank = int(os.environ['RANK']) if 'RANK' in os.environ else -1
+    #world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
+    #global_rank = int(os.environ['RANK']) if 'RANK' in os.environ else -1
 
-    rank = global_rank # rank = -1
+    rank = -1 #global_rank # rank = -1
     #print(rank)
     # TODO: handle distributed training logger
     # set the logger, tb_log_dir means tensorboard logdir
@@ -160,11 +160,11 @@ def main():
         if os.path.exists(cfg.MODEL.PRETRAINED):
             logger.info("=> loading model '{}'".format(cfg.MODEL.PRETRAINED))
             checkpoint = torch.load(cfg.MODEL.PRETRAINED)
-            begin_epoch = checkpoint['epoch']
+            #begin_epoch = checkpoint['epoch']
             # best_perf = checkpoint['perf']
             last_epoch = checkpoint['epoch']
-            model.load_state_dict(checkpoint['state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer'])
+            model.load_state_dict(checkpoint['state_dict'], strict=False)
+            #optimizer.load_state_dict(checkpoint['optimizer'])
             logger.info("=> loaded checkpoint '{}' (epoch {})".format(
                 cfg.MODEL.PRETRAINED, checkpoint['epoch']))
             #cfg.NEED_AUTOANCHOR = False     #disable autoanchor
@@ -175,11 +175,11 @@ def main():
             model_dict = model.state_dict()
             checkpoint_file = cfg.MODEL.PRETRAINED_DET
             checkpoint = torch.load(checkpoint_file)
-            begin_epoch = checkpoint['epoch']
+            #begin_epoch = checkpoint['epoch']
             last_epoch = checkpoint['epoch']
             checkpoint_dict = {k: v for k, v in checkpoint['state_dict'].items() if k.split(".")[1] in det_idx_range}
             model_dict.update(checkpoint_dict)
-            model.load_state_dict(model_dict)
+            model.load_state_dict(model_dict, strict=False)
             logger.info("=> loaded det branch checkpoint '{}' ".format(checkpoint_file))
         
         if cfg.AUTO_RESUME and os.path.exists(checkpoint_file):
@@ -333,7 +333,7 @@ def main():
               epoch, num_batch, num_warmup, writer_dict, logger, device, rank, wandb=wandb)
         
         lr_scheduler.step()
-        wandb.log({"learning rate": lr_scheduler.get_last_lr()})
+        #wandb.log({"learning rate": lr_scheduler.get_last_lr()})
 
         # evaluate on validation set
         if (epoch % cfg.TRAIN.VAL_FREQ == 0 or epoch == cfg.TRAIN.END_EPOCH) and rank in [-1, 0]:
