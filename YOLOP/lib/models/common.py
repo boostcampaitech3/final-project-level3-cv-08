@@ -176,7 +176,7 @@ class Detect(nn.Module):
     def __init__(self, nc=13, anchors=(), ch=()):  # detection layer
         super(Detect, self).__init__()
         self.nc = nc  # number of classes
-        self.no = nc * 5  # number of outputs per anchor 85
+        self.no = nc + 5  # number of outputs per anchor 85
         self.nl = len(anchors)  # number of detection layers 3
         self.na = len(anchors[0]) // 2  # number of anchors 3
         self.grid = [torch.zeros(1)] * self.nl  # init grid 
