@@ -21,8 +21,8 @@ opt/ml
 `-- final-project-level3-cv-08
     `-- YOLOP
 ```
-사용된 BDD100k의 크기는 약 8GB
-학습할 때만 필요 demo에는 필요없음 (demo는 어떤 이미지든 1280 x 720 이기만 하면 됨)
+* 사용된 BDD100k의 크기는 약 8GB
+* 학습할 때만 필요 demo에는 필요없음 (demo는 어떤 이미지든 1280 x 720 이기만 하면 됨)
 
 ### YOLOP Structure
 ```
