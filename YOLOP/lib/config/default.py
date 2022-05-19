@@ -26,7 +26,7 @@ _C.MODEL = CN(new_allowed=True)
 _C.MODEL.NAME = ''
 _C.MODEL.STRU_WITHSHARE = False     #add share_block to segbranch
 _C.MODEL.HEADS_NAME = ['']
-_C.MODEL.PRETRAINED = "" # trained parameter /opt/ml/final-project-level3-cv-08/YOLOP/weights/End-to-end.pth
+_C.MODEL.PRETRAINED = "/opt/ml/final-project-level3-cv-08/YOLOP/weights/End-to-end.pth" # trained parameter /opt/ml/final-project-level3-cv-08/YOLOP/weights/End-to-end.pth
 _C.MODEL.PRETRAINED_DET = ""
 _C.MODEL.IMAGE_SIZE = [640, 640]  # width * height, ex: 192 * 256
 _C.MODEL.EXTRA = CN(new_allowed=True)
@@ -123,7 +123,7 @@ _C.TEST.MODEL_FILE = ''
 _C.TEST.SAVE_JSON = False
 _C.TEST.SAVE_TXT = False
 _C.TEST.PLOTS = True
-_C.TEST.NMS_CONF_THRESHOLD  = 0.001
+_C.TEST.NMS_CONF_THRESHOLD  = 0.005
 _C.TEST.NMS_IOU_THRESHOLD  = 0.6
 
 
