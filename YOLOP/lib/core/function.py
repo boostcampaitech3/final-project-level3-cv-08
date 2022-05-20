@@ -3,6 +3,8 @@ from lib.core.evaluate import ConfusionMatrix,SegmentationMetric
 from lib.core.general import non_max_suppression,check_img_size,scale_coords,xyxy2xywh,xywh2xyxy,box_iou,coco80_to_coco91_class,plot_images,ap_per_class,output_to_target
 from lib.utils.utils import time_synchronized
 from lib.utils import plot_img_and_mask,plot_one_box,show_seg_result
+from lib.utils.utils import save_checkpoint
+import glob
 import torch
 from threading import Thread
 import numpy as np
@@ -19,7 +21,7 @@ from tqdm import tqdm
 
 
 def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_batch, num_warmup,
-          writer_dict, logger, device, rank=-1):
+          writer_dict, logger, device, rank=-1, wandb=None):
     """
     train for one epoch
 
@@ -41,6 +43,7 @@ def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_bat
     None
 
     """
+    
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -62,8 +65,9 @@ def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_bat
             for j, x in enumerate(optimizer.param_groups):
                 # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
                 x['lr'] = np.interp(num_iter, xi, [cfg.TRAIN.WARMUP_BIASE_LR if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
-                if 'momentum' in x:
-                    x['momentum'] = np.interp(num_iter, xi, [cfg.TRAIN.WARMUP_MOMENTUM, cfg.TRAIN.MOMENTUM])
+                #if 'momentum' in x:
+                #    x['momentum'] = np.interp(num_iter, xi, [cfg.TRAIN.WARMUP_MOMENTUM, cfg.TRAIN.MOMENTUM])
+                #    wandb.log({"momentum": x['momentum']})
 
         data_time.update(time.time() - start)
         if not cfg.DEBUG:
@@ -75,6 +79,14 @@ def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_bat
         with amp.autocast(enabled=device.type != 'cpu'):
             outputs = model(input)
             total_loss, head_losses = criterion(outputs, target, shapes,model)
+            det_loss = head_losses[0] + head_losses[1] + head_losses[2]
+            da_loss = head_losses[3]
+            ll_loss = head_losses[4]
+            all_loss = head_losses[6]
+            wandb.log({"detection loss": det_loss})
+            wandb.log({"drival area loss": da_loss})
+            wandb.log({"lane line loss": ll_loss})
+            wandb.log({"total loss": all_loss})
             # print(head_losses)
 
         # compute gradient and do update step
@@ -82,6 +94,7 @@ def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_bat
         scaler.scale(total_loss).backward()
         scaler.step(optimizer)
         scaler.update()
+        wandb.log({"learning rate": optimizer.param_groups[0]['lr']})
 
         if rank in [-1, 0]:
             # measure accuracy and record loss
@@ -110,10 +123,20 @@ def train(cfg, train_loader, model, criterion, optimizer, scaler, epoch, num_bat
                 writer.add_scalar('train_loss', losses.val, global_steps)
                 # writer.add_scalar('train_acc', acc.val, global_steps)
                 writer_dict['train_global_steps'] = global_steps + 1
-
+        
+        save_checkpoint(
+                epoch=epoch,
+                name=cfg.MODEL.NAME,
+                model=model,
+                # 'best_state_dict': model.module.state_dict(),
+                # 'perf': perf_indicator,
+                optimizer=optimizer,
+                output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
+                filename='checkpoint.pth'
+            )
 
 def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir,
-             tb_log_dir, writer_dict=None, logger=None, device='cpu', rank=-1):
+             tb_log_dir, writer_dict=None, logger=None, device='cpu', rank=-1, wandb=None):
     """
     validata
 
@@ -144,17 +167,12 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     save_conf=False # save auto-label confidences
     verbose=False
     save_hybrid=False
-    log_imgs,wandb = min(16,100), None
+    log_imgs = min(16,100)
 
-    nc = 1
+    nc = 7
     iouv = torch.linspace(0.5,0.95,10).to(device)     #iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
-    try:
-        import wandb
-    except ImportError:
-        wandb = None
-        log_imgs = 0
 
     seen =  0 
     confusion_matrix = ConfusionMatrix(nc=model.nc) #detector confusion matrix
@@ -183,7 +201,7 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
 
     # switch to train mode
     model.eval()
-    jdict, stats, ap, ap_class, wandb_images = [], [], [], [], []
+    jdict, stats, ap, ap_class, wandb_images, wandb_images2 = [], [], [], [], [], []
 
     for batch_i, (img, target, paths, shapes) in tqdm(enumerate(val_loader), total=len(val_loader)):
         if not config.DEBUG:
@@ -248,6 +266,8 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
             target[0][:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
             lb = [target[0][target[0][:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
             output = non_max_suppression(inf_out, conf_thres= config.TEST.NMS_CONF_THRESHOLD, iou_thres=config.TEST.NMS_IOU_THRESHOLD, labels=lb)
+            # output for demo
+            output2 = non_max_suppression(inf_out, conf_thres= 0.25, iou_thres=0.45, labels=lb)
             #output = non_max_suppression(inf_out, conf_thres=0.001, iou_thres=0.6)
             #output = non_max_suppression(inf_out, conf_thres=config.TEST.NMS_CONF_THRES, iou_thres=config.TEST.NMS_IOU_THRES)
             t_nms = time_synchronized() - t
@@ -297,7 +317,6 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
                         if len(det):
                             det[:,:4] = scale_coords(img[i].shape[1:],det[:,:4],img_det.shape).round()
                         for *xyxy,conf,cls in reversed(det):
-                            #print(cls)
                             label_det_pred = f'{names[int(cls)]} {conf:.2f}'
                             plot_one_box(xyxy, img_det , label=label_det_pred, color=colors[int(cls)], line_thickness=3)
                         cv2.imwrite(save_dir+"/batch_{}_{}_det_pred.png".format(epoch,i),img_det)
@@ -351,7 +370,8 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
                              "scores": {"class_score": conf},
                              "domain": "pixel"} for *xyxy, conf, cls in pred.tolist()]
                 boxes = {"predictions": {"box_data": box_data, "class_labels": names}}  # inference-space
-                wandb_images.append(wandb.Image(img[si], boxes=boxes, caption=path.name))
+                if wandb:
+                    wandb_images.append(wandb.Image(img[si], boxes=boxes, caption=path.name))
 
             # Append to pycocotools JSON dictionary
             if config.TEST.SAVE_JSON:
@@ -398,6 +418,16 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
                                 correct[pi[j]] = ious[j] > iouv  # iou_thres is 1xn
                                 if len(detected) == nl:  # all targets already located in image
                                     break
+        for si, pred in enumerate(output2):
+            if config.TEST.PLOTS and len(wandb_images2) < log_imgs:
+                box_data = [{"position": {"minX": xyxy[0], "minY": xyxy[1], "maxX": xyxy[2], "maxY": xyxy[3]},
+                             "class_id": int(cls),
+                             "box_caption": "%s %.3f" % (names[cls], conf),
+                             "scores": {"class_score": conf},
+                             "domain": "pixel"} for *xyxy, conf, cls in pred.tolist()]
+                boxes = {"predictions": {"box_data": box_data, "class_labels": names}}  # inference-space
+                if wandb:
+                    wandb_images2.append(wandb.Image(img[si], boxes=boxes, caption=path.name))
 
             # Append statistics (correct, conf, pcls, tcls)
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
@@ -423,15 +453,18 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
         nt = torch.zeros(1)
 
     # Print results
+    pf = '%20s' + '%12s' * 6  # print format
+    print('\n')
+    print(pf % ('Class', 'seen', 'predictions', 'precision', 'recall', 'mAP50', 'mAP'))
     pf = '%20s' + '%12.3g' * 6  # print format
     print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
     #print(map70)
     #print(map75)
-
+    class_names = ['person', 'car','bike', 'tl_green', 'tl_red', 'tl_none', 'traffic sign']
     # Print results per class
     if (verbose or (nc <= 20 and not training)) and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):
-            print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+            print(pf % (class_names[int(names[c])], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
 
     # Print speeds
     t = tuple(x / seen * 1E3 for x in (t_inf, t_nms, t_inf + t_nms)) + (imgsz, imgsz, batch_size)  # tuple
@@ -441,9 +474,14 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     # Plots
     if config.TEST.PLOTS:
         confusion_matrix.plot(save_dir=save_dir, names=list(names.values()))
-        if wandb and wandb.run:
-            wandb.log({"Images": wandb_images})
-            wandb.log({"Validation": [wandb.Image(str(f), caption=f.name) for f in sorted(save_dir.glob('test*.jpg'))]})
+        if wandb:
+            print("=> logging for validation to wandb...")
+            wandb.log({"Validation Images": wandb_images})
+            wandb.log({"Demo Images": wandb_images2})
+            for i, c in enumerate(ap_class):
+                wandb.log({f"mAP50_{class_names[int(names[c])]}": ap50[i]})
+            
+            # wandb.log({"Validation": [wandb.Image(str(f), caption=f.name) for f in sorted(glob.glob(os.path.join(path, '*result.png')))]})
 
     # Save JSON
     if config.TEST.SAVE_JSON and len(jdict):

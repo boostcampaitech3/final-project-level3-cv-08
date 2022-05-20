@@ -6,6 +6,7 @@ sys.path.append(BASE_DIR)
 
 import pprint
 import time
+import datetime
 import torch
 import torch.nn.parallel
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -72,14 +73,23 @@ def parse_args():
 
 def main():
     # set all the configurations
+    try:
+        import wandb
+        wandb.init(project='YOLOP', entity='hbage', name='train')
+    except ImportError:
+        wandb = None
+        log_imgs = 0
+
+
     args = parse_args()
     update_config(cfg, args)
+    wandb.config.update(cfg)
 
     # Set DDP variables
-    world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
-    global_rank = int(os.environ['RANK']) if 'RANK' in os.environ else -1
+    #world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
+    #global_rank = int(os.environ['RANK']) if 'RANK' in os.environ else -1
 
-    rank = global_rank # rank = -1
+    rank = -1 #global_rank # rank = -1
     #print(rank)
     # TODO: handle distributed training logger
     # set the logger, tb_log_dir means tensorboard logdir
@@ -128,7 +138,6 @@ def main():
     criterion = get_loss(cfg, device=device)
     optimizer = get_optimizer(cfg, model)
 
-
     # load checkpoint model
     best_perf = 0.0
     best_model = False
@@ -151,11 +160,11 @@ def main():
         if os.path.exists(cfg.MODEL.PRETRAINED):
             logger.info("=> loading model '{}'".format(cfg.MODEL.PRETRAINED))
             checkpoint = torch.load(cfg.MODEL.PRETRAINED)
-            begin_epoch = checkpoint['epoch']
+            #begin_epoch = checkpoint['epoch']
             # best_perf = checkpoint['perf']
             last_epoch = checkpoint['epoch']
-            model.load_state_dict(checkpoint['state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer'])
+            model.load_state_dict(checkpoint['state_dict'], strict=False)
+            #optimizer.load_state_dict(checkpoint['optimizer'])
             logger.info("=> loaded checkpoint '{}' (epoch {})".format(
                 cfg.MODEL.PRETRAINED, checkpoint['epoch']))
             #cfg.NEED_AUTOANCHOR = False     #disable autoanchor
@@ -166,11 +175,11 @@ def main():
             model_dict = model.state_dict()
             checkpoint_file = cfg.MODEL.PRETRAINED_DET
             checkpoint = torch.load(checkpoint_file)
-            begin_epoch = checkpoint['epoch']
+            #begin_epoch = checkpoint['epoch']
             last_epoch = checkpoint['epoch']
             checkpoint_dict = {k: v for k, v in checkpoint['state_dict'].items() if k.split(".")[1] in det_idx_range}
             model_dict.update(checkpoint_dict)
-            model.load_state_dict(model_dict)
+            model.load_state_dict(model_dict, strict=False)
             logger.info("=> loaded det branch checkpoint '{}' ".format(checkpoint_file))
         
         if cfg.AUTO_RESUME and os.path.exists(checkpoint_file):
@@ -249,7 +258,7 @@ def main():
 
     # assign model params
     model.gr = 1.0
-    model.nc = 1
+    model.nc = 7
     # print('bulid model finished')
 
     print("begin to load data")
@@ -315,14 +324,17 @@ def main():
     num_warmup = max(round(cfg.TRAIN.WARMUP_EPOCHS * num_batch), 1000)
     scaler = amp.GradScaler(enabled=device.type != 'cpu')
     print('=> start training...')
+    best_score = 0
     for epoch in range(begin_epoch+1, cfg.TRAIN.END_EPOCH+1):
+        start = time.time()
         if rank != -1:
             train_loader.sampler.set_epoch(epoch)
         # train for one epoch
         train(cfg, train_loader, model, criterion, optimizer, scaler,
-              epoch, num_batch, num_warmup, writer_dict, logger, device, rank)
+              epoch, num_batch, num_warmup, writer_dict, logger, device, rank, wandb=wandb)
         
         lr_scheduler.step()
+        #wandb.log({"learning rate": lr_scheduler.get_last_lr()})
 
         # evaluate on validation set
         if (epoch % cfg.TRAIN.VAL_FREQ == 0 or epoch == cfg.TRAIN.END_EPOCH) and rank in [-1, 0]:
@@ -330,7 +342,7 @@ def main():
             da_segment_results,ll_segment_results,detect_results, total_loss,maps, times = validate(
                 epoch,cfg, valid_loader, valid_dataset, model, criterion,
                 final_output_dir, tb_log_dir, writer_dict,
-                logger, device, rank
+                logger, device, rank, wandb=wandb
             )
             fi = fitness(np.array(detect_results).reshape(1, -1))  #目标检测评价指标
 
@@ -353,6 +365,7 @@ def main():
 
         # save checkpoint model and best model
         if rank in [-1, 0]:
+            """
             savepath = os.path.join(final_output_dir, f'epoch-{epoch}.pth')
             logger.info('=> saving checkpoint to {}'.format(savepath))
             save_checkpoint(
@@ -375,6 +388,74 @@ def main():
                 output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
                 filename='checkpoint.pth'
             )
+            """
+            savepath = os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET)
+            logger.info('=> saving checkpoint to {}'.format(savepath))
+            save_checkpoint(
+                epoch=epoch,
+                name=cfg.MODEL.NAME,
+                model=model,
+                # 'best_state_dict': model.module.state_dict(),
+                # 'perf': perf_indicator,
+                optimizer=optimizer,
+                output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
+                filename='checkpoint.pth'
+            )
+
+            # if you train all incoder and heads, save checkpoint when all of mIoU are best
+            train_all = cfg.TRAIN.SEG_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.ENC_DET_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == False
+
+            if train_all:
+                if da_segment_results[2] + ll_segment_results[2] + detect_results[2] > best_score:
+                    best_score = da_segment_results[2] + ll_segment_results[2] + detect_results[2]
+                    save_checkpoint(
+                        epoch=epoch,
+                        name=cfg.MODEL.NAME,
+                        model=model,
+                        # 'best_state_dict': model.module.state_dict(),
+                        # 'perf': perf_indicator,
+                        optimizer=optimizer,
+                        output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
+                        filename='model_best_train_all.pth'
+                    )
+                    print(f"=> saving best model_epoch{epoch}...")
+            # if you train without seg, save checkpoint when det_mAP is best
+            train_without_seg = cfg.TRAIN.ENC_DET_ONLY == True and cfg.TRAIN.SEG_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == False
+
+            if train_without_seg:
+                if detect_results[2] > best_score:
+                    best_score = detect_results[2]
+                    save_checkpoint(
+                        epoch=epoch,
+                        name=cfg.MODEL.NAME,
+                        model=model,
+                        # 'best_state_dict': model.module.state_dict(),
+                        # 'perf': perf_indicator,
+                        optimizer=optimizer,
+                        output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
+                        filename='model_best_train_enc_det_only.pth'
+                    )
+                    print(f"=> saving best model_epoch{epoch}...")
+            # if you train only seg branches, save checkpoint when seg_mIoU are best
+            train_only_seg = cfg.TRAIN.SEG_ONLY == True and cfg.TRAIN.ENC_DET_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == False
+
+            if train_only_seg:
+                if da_segment_results[2] + ll_segment_results[2] > best_score:
+                    best_score = da_segment_results[2] + ll_segment_results[2]
+                    save_checkpoint(
+                        epoch=epoch,
+                        name=cfg.MODEL.NAME,
+                        model=model,
+                        # 'best_state_dict': model.module.state_dict(),
+                        # 'perf': perf_indicator,
+                        optimizer=optimizer,
+                        output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
+                        filename='model_best_train_seg_only.pth'
+                    )
+                    print(f"=> saving best model_epoch{epoch}...")
+        sec = time.time() - start
+        result = datetime.timedelta(seconds=sec)
+        print(f'------- {result} -------')
 
     # save final model
     if rank in [-1, 0]:
