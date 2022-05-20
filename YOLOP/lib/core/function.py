@@ -169,7 +169,7 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     save_hybrid=False
     log_imgs = min(16,100)
 
-    nc = 13
+    nc = 7
     iouv = torch.linspace(0.5,0.95,10).to(device)     #iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
@@ -460,7 +460,7 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
     #print(map70)
     #print(map75)
-    class_names = ['person', 'rider', 'car', 'bus', 'truck', 'bike', 'motor', 'tl_green', 'tl_red', 'tl_yellow', 'tl_none', 'traffic sign', 'train']
+    class_names = ['person', 'car','bike', 'tl_green', 'tl_red', 'tl_none', 'traffic sign']
     # Print results per class
     if (verbose or (nc <= 20 and not training)) and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):

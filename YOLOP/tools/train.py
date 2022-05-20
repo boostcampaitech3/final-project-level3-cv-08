@@ -258,7 +258,7 @@ def main():
 
     # assign model params
     model.gr = 1.0
-    model.nc = 13
+    model.nc = 7
     # print('bulid model finished')
 
     print("begin to load data")
@@ -324,6 +324,7 @@ def main():
     num_warmup = max(round(cfg.TRAIN.WARMUP_EPOCHS * num_batch), 1000)
     scaler = amp.GradScaler(enabled=device.type != 'cpu')
     print('=> start training...')
+    best_score = 0
     for epoch in range(begin_epoch+1, cfg.TRAIN.END_EPOCH+1):
         start = time.time()
         if rank != -1:
@@ -405,7 +406,6 @@ def main():
             train_all = cfg.TRAIN.SEG_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.ENC_DET_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == False
 
             if train_all:
-                best_score = 0
                 if da_segment_results[2] + ll_segment_results[2] + detect_results[2] > best_score:
                     best_score = da_segment_results[2] + ll_segment_results[2] + detect_results[2]
                     save_checkpoint(
@@ -423,7 +423,6 @@ def main():
             train_without_seg = cfg.TRAIN.ENC_DET_ONLY == True and cfg.TRAIN.SEG_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == False
 
             if train_without_seg:
-                best_score = 0
                 if detect_results[2] > best_score:
                     best_score = detect_results[2]
                     save_checkpoint(
@@ -441,7 +440,6 @@ def main():
             train_only_seg = cfg.TRAIN.SEG_ONLY == True and cfg.TRAIN.ENC_DET_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == False
 
             if train_only_seg:
-                best_score = 0
                 if da_segment_results[2] + ll_segment_results[2] > best_score:
                     best_score = da_segment_results[2] + ll_segment_results[2]
                     save_checkpoint(
