@@ -2,7 +2,10 @@
 import argparse
 import os
 import warnings
+import sys
+from os import path
 
+sys.path.insert(0, path.abspath('..'))
 
 import mmcv
 import torch
@@ -41,8 +44,9 @@ from lib.models import get_net
 def parse_args():
     parser = argparse.ArgumentParser(
         description='MMDet test (and eval) a model')
-    parser.add_argument('config', help='test config file path')
-    parser.add_argument('checkpoint', help='checkpoint file')
+    parser.add_argument('config', help='test config file path for 3D')
+    parser.add_argument('checkpoint', help='checkpoint file for 3D')
+    parser.add_argument('checkpoint_YOLOP', help='checkpoint file path for YOLOP')
     parser.add_argument("--max_age", 
                         help="Maximum number of frames to keep alive a track without associated detections.", 
                         type=int, default=2)
@@ -239,7 +243,7 @@ def main():
     >>>>>>>>>>>>>>>>>>>>>>> YOLOP
     """
     model_2d = get_net(cfgs)
-    model_2d.load_state_dict(torch.load('/opt/ml/End-to-end.pth')['state_dict'])
+    model_2d.load_state_dict(torch.load(args.checkpoint_YOLOP)['state_dict'])
     if torch.cuda.is_available():
         model_2d.cuda()
     else:
