@@ -497,7 +497,7 @@ YOLOP = [
 [ -1, Conv, [32, 16, 3, 1]],    #39
 [ -1, BottleneckCSP, [16, 8, 1, False]],    #40
 [ -1, Upsample, [None, 2, 'nearest']],  #41
-[ -1, Conv, [8, 2, 3, 1]] #42 Lane line segmentation head
+[ -1, Conv, [8, 2, 3, 1]] #42 Lane line segmentation head 8,2,3,1 중에서 2를 배경+클래스개수로 변경
 ]
 
 
@@ -586,11 +586,12 @@ if __name__ == "__main__":
     input_ = torch.randn((1, 3, 256, 256))
     gt_ = torch.rand((1, 2, 256, 256))
     metric = SegmentationMetric(2)
-    model_out,SAD_out = model(input_)
+    model_out = model(input_)
     detects, dring_area_seg, lane_line_seg = model_out
-    Da_fmap, LL_fmap = SAD_out
+    #Da_fmap, LL_fmap = SAD_out
     for det in detects:
         print(det.shape)
     print(dring_area_seg.shape)
+    print(lane_line_seg)
     print(lane_line_seg.shape)
  
