@@ -13,7 +13,7 @@ import os
 from mmdet3d.models import (Base3DDetector, Base3DSegmentor,
                             SingleStageMono3DDetector)
 
-from utils.utils import lidar2Bev, Sort, detection2Bev, bevPoints, drawBbox, transformImg
+from utils.utils import lidar2Bev, Sort, detection2Bev, bevPoints, drawBbox, transformImg, bevPoints_tracking, load_kitti_tracking_label, load_kitti_tracking_calib, Cam2LidarBev_tracking
 from lib.core.general import non_max_suppression, scale_coords
 from lib.utils import plot_one_box,show_seg_result
 from ..core.evaluation.kitti_utils.rotate_iou import rotate_iou_gpu_eval
@@ -58,6 +58,9 @@ def single_gpu_test(model,
                        min_hits=args.min_hits,
                        centerpoint_threshold=args.centerpoint_threshold) #create instance of the SORT tracker
     
+    label = load_kitti_tracking_label('/opt/ml/kitti1/label_0000.txt')
+    calib = load_kitti_tracking_calib('/opt/ml/kitti1/testing/calib/calib_0000.txt')
+
     if not os.path.exists('/opt/ml/tracking'):
         os.makedirs('/opt/ml/tracking')
     with open('/opt/ml/tracking/tracking.txt', 'w') as tracking_file:
@@ -66,7 +69,14 @@ def single_gpu_test(model,
         for i, data in enumerate(data_loader):
             with torch.no_grad():
                 result = model(return_loss=False, rescale=True, **data)
-
+            
+            """
+            """
+            gt, name = Cam2LidarBev_tracking(calib, label, i)
+            gt= np.array(gt)[:, [0, 1, 3, 2, 4]]
+            gt_points = bevPoints_tracking(gt)
+            """
+            """
             # 모든 lidar BEV view
             velodyne_path = dataset[i]['img_metas'][0].data['pts_filename']
             top, density_image = lidar2Bev(velodyne_path)
@@ -79,11 +89,23 @@ def single_gpu_test(model,
             trackers = mot_tracker.update(total_det)
             # x,y,rot,h,w -> x1,y1,x2,y2,x3,y3,x4,y4
 
+            # print(trackers) -> x, y, rot, h, w, tracking_id, cls_id, score
             rotated_points= bevPoints(trackers)
+            rotated_points_detections = bevPoints(total_det)
 
             # draw bbox on bev lidar points
-            density_image = drawBbox(rotated_points, trackers, density_image, i, tracking_file)
+            density_image = drawBbox(rotated_points, trackers, rotated_points_detections, density_image, i, tracking_file)
 
+            """
+            """
+            for j, point in enumerate(gt_points):
+                point = point.reshape(-1, 2).astype(np.int32)[:,::-1]
+                density_image = cv2.polylines(density_image, [point], True, (0, 0, 255), thickness=1)
+                x_max = point[:, 0].max()
+                y_max = point[:, 1].max()
+                cv2.putText(density_image, str(j)+name[j], (x_max, y_max), 0, 0.7, (0, 0, 255), thickness=2, lineType=cv2.LINE_AA)
+            """
+            """
             cv2.imwrite(f'/opt/ml/images/3D/image{i:06d}.png', density_image)
 
             """
@@ -122,8 +144,7 @@ def single_gpu_test(model,
                 det[:,:4] = scale_coords(img.shape[2:],det[:,:4],img_det.shape).round()
                 for *xyxy,conf,cls in reversed(det):
                     label_det_pred = f'{names[int(cls)]} {conf:.2f}'
-                    plot_one_box(xyxy, img_det , label=label_det_pred, color=colors[int(cls)], line_thickness=2)
-            
+                    plot_one_box(xyxy, img_det, label=label_det_pred, color=colors[int(cls)], line_thickness=2)
             
             cv2.imwrite(f'/opt/ml/images/2D/image{i:06d}.png', img_det)
 
