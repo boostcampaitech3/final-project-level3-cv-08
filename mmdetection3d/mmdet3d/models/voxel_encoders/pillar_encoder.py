@@ -103,6 +103,7 @@ class PillarFeatureNet(nn.Module):
         Returns:
             torch.Tensor: Features of pillars.
         """
+        
         features_ls = [features]
         # Find distance of x, y, and z from cluster center
         if self._with_cluster_center:
@@ -154,7 +155,6 @@ class PillarFeatureNet(nn.Module):
 
         for pfn in self.pfn_layers:
             features = pfn(features, num_points)
-
         return features.squeeze(1)
 
 

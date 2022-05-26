@@ -6,7 +6,7 @@ _base_ = [
 
 point_cloud_range = [0, -39.68, -3, 69.12, 39.68, 1]
 # dataset settings
-data_root = '/opt/ml/kitti/'
+data_root = '/opt/ml/kitti1/'
 class_names = ['Pedestrian', 'Cyclist', 'Car']
 # PointPillars adopted a different sampling strategies among classes
 db_sampler = dict(
@@ -79,4 +79,4 @@ runner = dict(max_epochs=80)
 
 # Use evaluation interval=2 reduce the number of evaluation timese
 evaluation = dict(interval=2)
-fp16 = dict(loss_scale='dynamic')
+fp16 = dict(loss_scale='512.')

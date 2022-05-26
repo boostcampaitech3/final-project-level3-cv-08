@@ -86,7 +86,6 @@ class MultiScaleFlipAug:
            dict[str: list]: The augmented data, where each value is wrapped
                into a list.
         """
-
         aug_data = []
         flip_args = [(False, None)]
         if self.flip:
@@ -183,7 +182,6 @@ class MultiScaleFlipAug3D(object):
                 different scales and flips.
         """
         aug_data = []
-
         # modified from `flip_aug = [False, True] if self.flip else [False]`
         # to reduce unnecessary scenes when using double flip augmentation
         # during test time

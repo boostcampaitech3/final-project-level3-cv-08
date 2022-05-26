@@ -1,6 +1,6 @@
 from __future__ import print_function
 
-
+import time
 import math
 import os
 import numpy as np
@@ -181,6 +181,7 @@ class KalmanBoxTracker(object):
         """
         #define constant velocity model
         self.cls_id = bbox[6]
+        self.score = bbox[5]
         self.kf = KalmanFilterCustom(dim_x=8, dim_z=5)
         self.kf.F = np.array([[1,0,0,0,0,1,0,0],
                             [0,1,0,0,0,0,1,0],
@@ -252,7 +253,7 @@ class KalmanBoxTracker(object):
         """
         Returns the current bounding box estimate.
         """
-        return convert_x_to_bbox(self.kf.x)[0], self.cls_id
+        return convert_x_to_bbox(self.kf.x)[0], self.cls_id, self.score
 
     
 
@@ -346,9 +347,9 @@ class Sort(object):
             self.trackers.append(trk)
         i = len(self.trackers)
         for trk in reversed(self.trackers):
-            d, cls_id = trk.get_state()
+            d, cls_id, cls_score = trk.get_state()
             if (trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits):
-                ret.append(np.concatenate((d,[trk.id+1], [cls_id])).reshape(1,-1)) # +1 as MOT benchmark requires positive
+                ret.append(np.concatenate((d,[trk.id+1], [cls_id], [cls_score])).reshape(1,-1)) # +1 as MOT benchmark requires positive
             i -= 1
             # remove dead tracklet
             if(trk.time_since_update > self.max_age):
@@ -474,6 +475,159 @@ def load_kitti_label(label_file):
             'location' : location, 'rotation_y' : rotation_y,
             'difficulty' : difficulty}
 
+def bevPoints_tracking(trackers):
+    xy = trackers[:, :2]
+    rotation_y_lidar = trackers[:, 4]
+    lw = trackers[:, 2:4]
+
+    v = 0.1
+    xrange = (0, 40.4)
+    yrange = (-30, 30)
+    xy_range = np.array([xrange[0], yrange[0]]).reshape(2, -1)
+
+    W = math.ceil((xrange[1] - xrange[0]) / v)
+    H = math.ceil((yrange[1] - yrange[0]) / v)
+    X0, Xn = 0, W
+    Y0, Yn = 0, H
+    width = Yn - Y0
+    height  = Xn - X0
+
+    wh_range = np.array([height, width]).reshape(2, -1)
+    
+    rotated_points = []
+    for i in range(xy.shape[0]):
+        rotation_mat = np.array([[np.cos(rotation_y_lidar[i]), -np.sin(rotation_y_lidar[i])],
+                            [np.sin(rotation_y_lidar[i]), np.cos(rotation_y_lidar[i])]])
+        
+        w = lw[i][1]/2
+        l = lw[i][0]/2
+        x_corners = [l, l, -l, -l]
+        y_corners = [w, -w, -w, w]
+        rotated_point = np.dot(rotation_mat, np.vstack([x_corners, y_corners]))
+        rotated_point = wh_range - ((xy[i].repeat(4).reshape(2, -1) + rotated_point) - xy_range) / v
+        rotated_point = rotated_point.T.reshape(8).astype(np.int32)
+        rotated_points.append(rotated_point)
+    return np.asarray(rotated_points)
+
+def Cam2LidarBev_tracking(calib, label, frame):
+    classes = ['Car', 'Pedestrian', 'Van', 'Cyclist']
+
+    rect = calib['R0_rect']
+    Tr_velo_to_cam = calib['Tr_velo_to_cam']
+    rt_mat = np.linalg.inv(rect@Tr_velo_to_cam)
+    # cam -> lidar
+
+
+    name = label['name']
+
+    xyz_base = label['location']
+    xyz_base_shape = xyz_base.shape
+    xyz = np.ones((xyz_base_shape[0], xyz_base_shape[1]+1))
+    
+    xyz[:, :3] = xyz_base
+    hwl = label['dimensions']
+    rotation_y = label['rotation_y']
+    
+    hwl_lidar = hwl
+    xyz_lidar = xyz @ rt_mat.T
+
+    rotation_y_lidar = -rotation_y - np.pi/2
+    rotation_y_lidar = rotation_y_lidar - np.floor(rotation_y_lidar/(np.pi*2) + 1/2)*np.pi*2 
+    # 각도가 pi/2 초과 pi 이하일 때, 값의 변환이 이상해지니 그 값에 filtering을 한다.
+    # 라이다 포인트로 변환
+
+    def filterIdx(classes, label, frame):
+        idx = []
+        for i in range(label['name'].shape[0]):
+            if label['name'][i] in classes and label['frame'][i]==frame:
+                idx.append(i)
+        return idx
+
+    
+    
+    filter_idx = filterIdx(classes, label, frame)
+    
+    hwl_lidar = hwl_lidar[filter_idx]
+    xyz_lidar = xyz_lidar[filter_idx]
+    rotation_y_lidar = rotation_y_lidar[filter_idx]
+    name = name[filter_idx]
+    
+    gt = np.concatenate([xyz_lidar[:, :2], hwl_lidar[:, 1:3], rotation_y_lidar[:,np.newaxis]], axis=1)
+    return gt, name
+
+def load_kitti_tracking_calib(calib_file):
+    with open(calib_file) as f:
+        lines = f.readlines()
+        # 원래는 7개까지이지만, txt파일을 보면 마지막에 2 줄이 비어있다. 
+        # 마지막 줄바꿈 문자까지 읽어오면 총 8줄이다. 
+        # 맨 마지막 빈 줄은 파일의 끝을 의미
+        assert (len(lines) == 7)
+
+    # 맨 앞 글자 P0: 를 제외하고 뒤의 숫자만 읽어옴
+    # strip()은 개행 문자를 제거하기 위해 사용
+    obj = lines[0].strip().split(' ')[1:]
+    #P0 = np.zeros((4, 4), dtype=np.float32)
+    P0 = np.array(obj, dtype=np.float32).reshape(3, -1)
+    #P0[3,3] = 1
+    
+    obj = lines[1].strip().split(' ')[1:]
+    #P1 = np.zeros((4, 4), dtype=np.float32)
+    P1 = np.array(obj, dtype=np.float32).reshape(3, -1)
+    #P1[3,3] = 1
+    
+    obj = lines[2].strip().split(' ')[1:]
+    #P2 = np.zeros((4, 4), dtype=np.float32)
+    P2 = np.array(obj, dtype=np.float32).reshape(3, -1)
+    #P2[3,3] = 1
+    
+    obj = lines[3].strip().split(' ')[1:]
+    #P3 = np.zeros((4, 4), dtype=np.float32)
+    P3 = np.array(obj, dtype=np.float32).reshape(3, -1)
+    #P3[3,3] = 1
+    
+    obj = lines[4].strip().split(' ')[1:]
+    R0_rect = np.zeros((4, 4), dtype=np.float32)
+    R0_rect[:3,:3] = np.array(obj, dtype=np.float32).reshape(3, -1)
+    R0_rect[3,3] = 1
+
+    obj = lines[5].strip().split(' ')[1:]
+    Tr_velo_to_cam = np.zeros((4, 4), dtype=np.float32)
+    Tr_velo_to_cam[:3, :] = np.array(obj, dtype=np.float32).reshape(3, -1)
+    Tr_velo_to_cam[3,3] = 1
+
+    obj = lines[6].strip().split(' ')[1:]
+    Tr_imu_to_velo = np.zeros((4, 4), dtype=np.float32)
+    Tr_imu_to_velo[:3, :] = np.array(obj, dtype=np.float32).reshape(3, -1)
+    Tr_imu_to_velo[3, 3] = 1
+    return {'P0' : P0, 'P1' : P1, 'P2' : P2, 'P3' : P3, 'R0_rect' : R0_rect,
+            'Tr_velo_to_cam' : Tr_velo_to_cam, 'Tr_imu_to_velo' : Tr_imu_to_velo}
+
+def load_kitti_tracking_label(label_file):
+    with open(label_file) as f:
+        lines = f.readlines()
+
+    frame = []
+    name = []
+    dimensions = []
+    location = []
+    rotation_y = []
+    
+    for line in lines:
+        line = line.strip().split(' ')
+        frame.append(int(line[0]))
+        name.append(line[2])
+        dimensions.append([float(line[10]), float(line[11]), float(line[12])])
+        location.append([float(line[13]), float(line[14]), float(line[15])])
+        rotation_y.append(float(line[16]))
+
+    name = np.array(name, dtype='<U10')
+    dimensions = np.array(dimensions, dtype=np.float32)
+    location = np.array(location, dtype=np.float32)
+    rotation_y = np.array(rotation_y, dtype=np.float32)
+    return {'frame' : frame, 'name' : name, 'dimensions' : dimensions,
+            'location' : location, 'rotation_y' : rotation_y,
+            }
+
 def detection2Bev(label, frame):
     classes = {0:'Pedestrian', 1:'Cyclist', 2:'Car'}
 
@@ -522,6 +676,7 @@ def lidar2Bev(velodyne_path):
     height   = Xn - X0
     channel = Zn - Z0  + 2
 
+
     if not os.path.exists(velodyne_path):
         print(f'{velodyne_path} not exists!!!!!!')
         return np.zeros((height, width, channel)), np.zeros((height, width))
@@ -529,20 +684,13 @@ def lidar2Bev(velodyne_path):
     lidar = np.fromfile(velodyne_path, dtype=np.float32).reshape(-1, 4)
 
     def filter_points(lidar, xrange, yrange, zrange):
-        pxs = lidar[:, 0]
-        pys = lidar[:, 1]
-        pzs = lidar[:, 2]
-
-        filter_x = np.where((pxs >= xrange[0]) & (pxs < xrange[1]))[0]
-        filter_y = np.where((pys >= yrange[0]) & (pys < yrange[1]))[0]
-        filter_z = np.where((pzs >= zrange[0]) & (pzs < zrange[1]))[0]
-        filter_xy = np.intersect1d(filter_x, filter_y)
-        filter_xyz = np.intersect1d(filter_xy, filter_z)
-
-        return lidar[filter_xyz]
-
+        lidar = lidar[:][(lidar[:,0] >= xrange[0]) & (lidar[:,0] < xrange[1])]
+        lidar = lidar[:][(lidar[:,1] >= yrange[0]) & (lidar[:,1] < yrange[1])]
+        lidar = lidar[:][(lidar[:,2] >= zrange[0]) & (lidar[:,2] < zrange[1])]
+        
+        return lidar
+    start = time.time()
     lidar = filter_points(lidar, xrange, yrange, zrange)
-
     
     # 원래 voxel의 channel보다 2개를 더해주는데
     # 뒤에 top이랑 mask에서 용도가 나옴
@@ -569,8 +717,10 @@ def lidar2Bev(velodyne_path):
     # -5로 초기화 하는 이유는 z축의 최소 범위가 -3이기 때문인듯 (-4도 됨, -3보다 더 작은 값이기만 하면 됨)
     # 맨 마지막 채널에는 같은 (height, widht)상의 점들 중 가장 큰 값을 저장
 
+    top[-qxs, -qys, -1] += 1
+    """
     for i in range(len(pxs)):
-        top[-qxs[i], -qys[i], -1]= 1+ top[-qxs[i], -qys[i], -1]
+        top[-qxs[i], -qys[i], -1]= 1 + top[-qxs[i], -qys[i], -1]
         # top의 마지막 채널은 point가 (height, widht)상에 존재하면 1을 더하고 존재하지 않으면 더하지 않는다. 
         # 이렇게 점이 많으면 값이 커지고 이미지로 plot할 때 더 흰값을 갖게 된다.
         # 음수로 한 이유는
@@ -583,7 +733,7 @@ def lidar2Bev(velodyne_path):
         #     차 머리 방향
         # 이렇게 되어 있기 사실상 우하단이 원점이라고 볼 수 있다. 
         # 이미지에서는 좌상단이 원점이므로 x와 y에 음수를 취해서 이미지를 뒤집어준것
-
+        
         if pzs[i]>mask[-qxs[i], -qys[i],qzs[i]]:
             # mask에는 voxel마다 실제 높이 좌표가 가장 큰 값이 저장되어 있음 (음수도 가능)
             # 그 voxel내의 좌표보다 현재 좌표가 더 크다면
@@ -599,21 +749,21 @@ def lidar2Bev(velodyne_path):
             # mask의 가장 큰 값 갱신
             top[-qxs[i], -qys[i], -2]=prs[i]
             # top의 뒤에서 두번째 channel에는 해당 값의 reflectance를 저장
+    """
 
     top[:,:,-1] = np.log(top[:,:,-1]+1)/math.log(64)
     # 이건 normalize방식인데 논문에 나와있음
     # top의 마지막 채널에는 point가 많을 경우 큰값, 적을 경우 작은값, 없을 경우 0인데, 이 값을 normalize함
     # log를 취하니깐 log1=0이니깐 값이 없으면 0, 아니면 logn/log64
     # 이렇게 되면 점이 많은 곳과 적은 곳의 색 차이가 나타나게 됨
-    if 1:
-        # top_image = np.sum(top[:,:,:-1],axis=2)
-        density_image = top[:,:,-1]
-        density_image = density_image-np.min(density_image)
-        # 음수를 양수로 바꿔주기 위해 최소 값을 뺌
-        density_image = (density_image/np.max(density_image)*255).astype(np.uint8)
-        # 최대값으로 나눠주어 0~1사이 값으로 만들고 255를 곱해주어 픽셀 값으로 만들어줌
-        # top_image = np.dstack((top_image, top_image, top_image)).astype(np.uint8)
-
+    
+    # top_image = np.sum(top[:,:,:-1],axis=2)
+    density_image = top[:,:,-1]
+    density_image = density_image-np.min(density_image)
+    # 음수를 양수로 바꿔주기 위해 최소 값을 뺌
+    density_image = (density_image/np.max(density_image)*255).astype(np.uint8)
+    # 최대값으로 나눠주어 0~1사이 값으로 만들고 255를 곱해주어 픽셀 값으로 만들어줌
+    # top_image = np.dstack((top_image, top_image, top_image)).astype(np.uint8)
 
     return top, density_image
 
@@ -659,11 +809,29 @@ def compute_color_for_id(label):
     color = [int((p * (label ** 2 - label + 1)) % 255) for p in palette]
     return tuple(color)
 
-def drawBbox(box3d, trackers, density_image, frame):
+def drawBbox(box3d, trackers, rotated_points_detections, density_image, frame, tracking_file):
     classes = {0 : 'Pedestrian', 1 : 'Cyclist', 2 : 'Car'}
     ids = trackers[:, 5].reshape(-1).astype(np.int32)
+    scores = trackers[:, 7].reshape(-1).astype(np.float64)
     labels = trackers[:, 6].reshape(-1)
     img_2d = density_image[np.newaxis, :, :].repeat(3, 0).transpose(1, 2, 0).astype(np.int32).copy()
+
+
+    # ground truth of detections
+    for i in range(rotated_points_detections.shape[0]):
+        color = (255, 0, 0)
+        points = rotated_points_detections[i].reshape(-1, 2)
+        points = points[:, ::-1]
+        x_max = points[:,0].max()
+        y_max = points[:,1].max()
+        img_2d = cv2.polylines(img_2d, [points], True, color, thickness=3)
+        img_2d = cv2.line(img_2d, ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), color = color, thickness=5)
+        # print('%d, %d, %d, %d, %d'%(frame, ids[i], (points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2, labels[i]), file=tracking_file)
+        # cv2.putText(img_2d, classes[labels[i]]+str(ids[i])+' : ' + str(scores[i])[:4], (x_max, y_max), 0, 0.7, color, thickness=1, lineType=cv2.LINE_AA)
+        # cv2.putText(img_2d, 'frame : ' + str(frame), (5, 30), 0, 0.7, color, thickness=1, lineType=cv2.LINE_AA)
+    
+
+    # detections updated with Kalmanfilter
     for i in range(box3d.shape[0]):
         color = compute_color_for_id(ids[i])
         points = box3d[i].reshape(-1, 2)
@@ -671,8 +839,12 @@ def drawBbox(box3d, trackers, density_image, frame):
         x_max = points[:,0].max()
         y_max = points[:,1].max()
         img_2d = cv2.polylines(img_2d, [points], True, color, thickness=2)
-        cv2.putText(img_2d, classes[labels[i]]+str(ids[i]), (x_max, y_max), 0, 0.7, color, thickness=1, lineType=cv2.LINE_AA)
+        img_2d = cv2.line(img_2d, ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), color = color, thickness=4)
+        print('%d, %d, %d, %d, %d'%(frame, ids[i], (points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2, labels[i]), file=tracking_file)
+        cv2.putText(img_2d, classes[labels[i]]+str(ids[i])+' : ' + str(scores[i])[:4], (x_max, y_max), 0, 0.7, color, thickness=1, lineType=cv2.LINE_AA)
         cv2.putText(img_2d, 'frame : ' + str(frame), (5, 30), 0, 0.7, color, thickness=1, lineType=cv2.LINE_AA)
+    
+    
     return img_2d
 
 

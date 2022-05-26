@@ -225,6 +225,7 @@ class Custom3DDataset(Dataset):
             return None
         self.pre_pipeline(input_dict)
         example = self.pipeline(input_dict)
+        
         if self.filter_empty_gt and \
                 (example is None or
                     ~(example['gt_labels_3d']._data != -1).any()):
@@ -243,7 +244,7 @@ class Custom3DDataset(Dataset):
         input_dict = self.get_data_info(index)
         self.pre_pipeline(input_dict)
         example = self.pipeline(input_dict)
-        
+
         return example
 
     @classmethod

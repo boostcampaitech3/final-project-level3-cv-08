@@ -40,9 +40,13 @@ class VoxelNet(SingleStage3DDetector):
     def extract_feat(self, points, img_metas=None):
         """Extract features from points."""
         voxels, num_points, coors = self.voxelize(points)
+        # voxels (voxel 개수, 한 voxel안의 point수, 4) -> 4 : x, y, z, r
+        # coors (voxel 개수, 4) : (0, 0, x, y) 맨 앞에 0은 배치 index, 두번째 0은 z축에 대한 idx (pillar에서는 모두 0)
+        # num_points : 각 voxel안의 point 개수
         voxel_features = self.voxel_encoder(voxels, num_points, coors)
         batch_size = coors[-1, 0].item() + 1
         x = self.middle_encoder(voxel_features, coors, batch_size)
+        
         x = self.backbone(x)
         if self.with_neck:
             x = self.neck(x)
@@ -88,6 +92,7 @@ class VoxelNet(SingleStage3DDetector):
         Returns:
             dict: Losses of each branch.
         """
+    
         x = self.extract_feat(points, img_metas)
         outs = self.bbox_head(x)
         loss_inputs = outs + (gt_bboxes_3d, gt_labels_3d, img_metas)
@@ -105,6 +110,7 @@ class VoxelNet(SingleStage3DDetector):
             bbox3d2result(bboxes, scores, labels)
             for bboxes, scores, labels in bbox_list
         ]
+
         return bbox_results
 
     def aug_test(self, points, img_metas, imgs=None, rescale=False):

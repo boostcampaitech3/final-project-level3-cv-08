@@ -4,8 +4,10 @@ import os
 import warnings
 import sys
 from os import path
-
+import pickle
+import cv2
 sys.path.insert(0, path.abspath('..'))
+from tqdm import tqdm
 
 import mmcv
 import torch
@@ -145,7 +147,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-
+    
     assert args.out or args.eval or args.format_only or args.show \
         or args.show_dir, \
         ('Please specify at least one operation (save/eval/format/show the '
@@ -161,7 +163,7 @@ def main():
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
-
+    print('>>>>>>>>>>>>>> data root :', cfg.data_root)
     cfg = compat_cfg(cfg)
 
     # set multi-process settings
@@ -252,7 +254,8 @@ def main():
     """
     if not distributed:
         model = MMDataParallel(model, device_ids=cfg.gpu_ids)
-        outputs = single_gpu_test(model, model_2d, data_loader, args, cfg)
+        outputs, bev_outputs = single_gpu_test(model, model_2d, data_loader, args, cfg)
+        # bev_outputs : (N, 7) -> x, y, rot, h, w, score, cls_id
     else:
         model = MMDistributedDataParallel(
             model.cuda(),
@@ -260,24 +263,12 @@ def main():
             broadcast_buffers=False)
         outputs = multi_gpu_test(model, data_loader, args.tmpdir,
                                  args.gpu_collect)
-    # rank, _ = get_dist_info()
-    # if rank == 0:
-    #     if args.out:
-    #         print(f'\nwriting results to {args.out}')
-    #         mmcv.dump(outputs, args.out)
-    #     kwargs = {} if args.eval_options is None else args.eval_options
-    #     if args.format_only:
-    #         dataset.format_results(outputs, **kwargs)
-    #     if args.eval:
-    #         eval_kwargs = cfg.get('evaluation', {}).copy()
-    #         # hard-code way to remove EvalHook args
-    #         for key in [
-    #                 'interval', 'tmpdir', 'start', 'gpu_collect', 'save_best',
-    #                 'rule'
-    #         ]:
-    #             eval_kwargs.pop(key, None)
-    #         eval_kwargs.update(dict(metric=args.eval, **kwargs))
-    #         print(dataset.evaluate(outputs, **eval_kwargs))
+    
+    with open(args.out, 'wb') as file:
+        pickle.dump(outputs, file)
+    
+    with open('/opt/ml/outputs/output.pkl', 'wb') as f:
+        pickle.dump(bev_outputs, f)
 
 
 if __name__ == '__main__':
