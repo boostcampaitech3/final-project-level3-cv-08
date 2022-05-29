@@ -477,7 +477,7 @@ YOLOP = [
 [ -1, Conv, [256, 256, 3, 2]],      #21
 [ [-1, 10], Concat, [1]],   #22
 [ -1, BottleneckCSP, [512, 512, 1, False]],     #23
-[ [17, 20, 23], Detect,  [7, [[3,9,5,11,4,20], [7,18,6,39,12,31], [19,50,38,81,68,157]], [128, 256, 512]]], #Detection head 24
+[ [17, 20, 23], Detect,  [8, [[3,9,5,11,4,20], [7,18,6,39,12,31], [19,50,38,81,68,157]], [128, 256, 512]]], #Detection head 24
 
 [ 16, Conv, [256, 128, 3, 1]],   #25
 [ -1, Upsample, [None, 2, 'nearest']],  #26
@@ -497,7 +497,7 @@ YOLOP = [
 [ -1, Conv, [32, 16, 3, 1]],    #39
 [ -1, BottleneckCSP, [16, 8, 1, False]],    #40
 [ -1, Upsample, [None, 2, 'nearest']],  #41
-[ -1, Conv, [8, 2, 3, 1]] #42 Lane line segmentation head 8,2,3,1 중에서 2를 배경+클래스개수로 변경
+[ -1, Conv, [8, 4, 3, 1]] #42 Lane line segmentation head 8,2,3,1 중에서 2를 배경+클래스개수로 변경
 ]
 
 
@@ -505,7 +505,7 @@ class MCnet(nn.Module):
     def __init__(self, block_cfg, **kwargs):
         super(MCnet, self).__init__()
         layers, save= [], []
-        self.nc = 7
+        self.nc = 8
         self.detector_index = -1
         self.det_out_idx = block_cfg[0][0]
         self.seg_out_idx = block_cfg[0][1:]
@@ -553,9 +553,12 @@ class MCnet(nn.Module):
             if block.from_ != -1:
                 x = cache[block.from_] if isinstance(block.from_, int) else [x if j == -1 else cache[j] for j in block.from_]       #calculate concat detect
             x = block(x)
-            if i in self.seg_out_idx:     #save driving area segment result
+            if i == self.seg_out_idx[1]:     #save lane line segment result
+                m=nn.Softmax(dim=1)
+                out.append(m(x)) # m(x)
+            elif i == self.seg_out_idx[0]:     #save driving area segment result
                 m=nn.Sigmoid()
-                out.append(m(x))
+                out.append(m(x)) # m(x)
             if i == self.detector_index:
                 det_out = x
             cache.append(x if block.index in self.save else None)

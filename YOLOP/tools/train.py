@@ -235,7 +235,7 @@ def main():
             # print(model.named_parameters)
             for k, v in model.named_parameters():
                 v.requires_grad = True  # train all layers
-                if k.split(".")[1] in Encoder_para_idx + Da_Seg_Head_para_idx + Det_Head_para_idx:
+                if k.split(".")[1] in Encoder_para_idx + Da_Seg_Head_para_idx + Det_Head_para_idx: #+ [str(i) for i in range(34,42)]
                     print('freezing %s' % k)
                     v.requires_grad = False
 
@@ -258,7 +258,7 @@ def main():
 
     # assign model params
     model.gr = 1.0
-    model.nc = 7
+    model.nc = 8
     # print('bulid model finished')
 
     print("begin to load data")
@@ -325,7 +325,7 @@ def main():
     scaler = amp.GradScaler(enabled=device.type != 'cpu')
     print('=> start training...')
     best_score = 0
-    for epoch in range(begin_epoch+1, cfg.TRAIN.END_EPOCH+1):
+    for epoch in range(begin_epoch, cfg.TRAIN.END_EPOCH+1):
         start = time.time()
         if rank != -1:
             train_loader.sampler.set_epoch(epoch)
@@ -435,12 +435,12 @@ def main():
                         output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
                         filename='model_best_train_enc_det_only.pth'
                     )
-                    print(f"=> saving best model_epoch{epoch}...")
+                    print(f"=> saving best model_epoch{epoch}...model_best_train_enc_det_only.pth")
             # if you train only seg branches, save checkpoint when seg_mIoU are best
             train_only_seg = cfg.TRAIN.SEG_ONLY == True and cfg.TRAIN.ENC_DET_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == False
 
             if train_only_seg:
-                if da_segment_results[2] + ll_segment_results[2] > best_score:
+                if ll_segment_results[2] + da_segment_results[2] > best_score:
                     best_score = da_segment_results[2] + ll_segment_results[2]
                     save_checkpoint(
                         epoch=epoch,
@@ -452,7 +452,43 @@ def main():
                         output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
                         filename='model_best_train_seg_only.pth'
                     )
-                    print(f"=> saving best model_epoch{epoch}...")
+                    print(f"=> saving best model_epoch{epoch}...model_best_train_seg_only.pth")
+
+            # if you train only lane line branch, save checkpoint when seg_mIoU are best
+            train_only_lane = cfg.TRAIN.SEG_ONLY == False and cfg.TRAIN.ENC_DET_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == False and cfg.TRAIN.LANE_ONLY == True
+
+            if train_only_lane:
+                if ll_segment_results[2] > best_score:
+                    best_score = ll_segment_results[2]
+                    save_checkpoint(
+                        epoch=epoch,
+                        name=cfg.MODEL.NAME,
+                        model=model,
+                        # 'best_state_dict': model.module.state_dict(),
+                        # 'perf': perf_indicator,
+                        optimizer=optimizer,
+                        output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
+                        filename='model_best_train_lane_only.pth'
+                    )
+                    print(f"=> saving best model_epoch{epoch}...model_best_train_lane_only.pth")
+            
+            # if you train only drivable area branch, save checkpoint when seg_mIoU are best
+            train_only_da = cfg.TRAIN.SEG_ONLY == False and cfg.TRAIN.ENC_DET_ONLY == False and cfg.TRAIN.DET_ONLY == False and cfg.TRAIN.ENC_SEG_ONLY == False and cfg.TRAIN.DRIVABLE_ONLY == True and cfg.TRAIN.LANE_ONLY == False
+
+            if train_only_da:
+                if da_segment_results[2] > best_score:
+                    best_score = da_segment_results[2]
+                    save_checkpoint(
+                        epoch=epoch,
+                        name=cfg.MODEL.NAME,
+                        model=model,
+                        # 'best_state_dict': model.module.state_dict(),
+                        # 'perf': perf_indicator,
+                        optimizer=optimizer,
+                        output_dir=os.path.join(cfg.LOG_DIR, cfg.DATASET.DATASET),
+                        filename='model_best_train_da_only.pth'
+                    )
+                    print(f"=> saving best model_epoch{epoch}...model_best_train_da_only.pth")
         sec = time.time() - start
         result = datetime.timedelta(seconds=sec)
         print(f'------- {result} -------')

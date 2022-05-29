@@ -125,7 +125,7 @@ def detect(cfg,opt):
         
         ll_predict = ll_seg_out[:, :,pad_h:(height-pad_h),pad_w:(width-pad_w)]
         ll_seg_mask = torch.nn.functional.interpolate(ll_predict, scale_factor=int(1/ratio), mode='bilinear')
-        _, ll_seg_mask = torch.max(ll_seg_mask, 1)
+        _, ll_seg_mask = torch.max(ll_seg_mask, 1)##########이부분 맥스면 0,1중에 하나 뱉음 0,1,2,3중에 하나가 아니라
         ll_seg_mask = ll_seg_mask.int().squeeze().cpu().numpy()
         # Lane line post-processing
         #ll_seg_mask = morphological_process(ll_seg_mask, kernel_size=7, func_type=cv2.MORPH_OPEN)
@@ -167,8 +167,8 @@ def detect(cfg,opt):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', nargs='+', type=str, default='/opt/ml/final-project-level3-cv-08/YOLOP/runs/BddDataset/model_best_train_enc_det_only.pth', help='model.pth path(s)')
-    parser.add_argument('--source', type=str, default='inference/images', help='source')  # file/folder   ex:inference/images
+    parser.add_argument('--weights', nargs='+', type=str, default='/opt/ml/final-project-level3-cv-08/YOLOP/runs/BddDataset/model_best_train_seg_only.pth', help='model.pth path(s)')
+    parser.add_argument('--source', type=str, default='inference/videos', help='source')  # file/folder   ex:inference/images
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')

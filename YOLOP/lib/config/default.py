@@ -9,7 +9,7 @@ _C.GPUS = (0,)
 _C.WORKERS = 4
 _C.PIN_MEMORY = False
 _C.PRINT_FREQ = 20
-_C.AUTO_RESUME =False       # Resume from the last training interrupt
+_C.AUTO_RESUME =False      # Resume from the last training interrupt
 _C.NEED_AUTOANCHOR = False      # Re-select the prior anchor(k-means)    When training from scratch (epoch=0), set it to be ture!
 _C.DEBUG = False
 _C.num_seg_class = 2
@@ -50,10 +50,22 @@ _C.LOSS.LL_IOU_GAIN = 0.2 # lane line iou loss gain
 
 # DATASET related params
 _C.DATASET = CN(new_allowed=True)
+
 _C.DATASET.DATAROOT = '/opt/ml/bdd_for_yolop/bdd100k/images/100k'       # the path of images folder
 _C.DATASET.LABELROOT = '/opt/ml/bdd_for_yolop/bdd100k/labels/100k'      # the path of det_annotations folder
 _C.DATASET.MASKROOT = '/opt/ml/bdd_for_yolop/bdd_seg_gt'                # the path of da_seg_annotations folder
-_C.DATASET.LANEROOT = '/opt/ml/bdd_for_yolop/bdd_lane_gt'               # the path of ll_seg_annotations folder
+_C.DATASET.LANEROOT = '/opt/ml/bdd_for_yolop/bdd_lane_gt'         # the path of ll_seg_annotations folder
+
+"""_C.DATASET.DATAROOT = '/opt/ml/bdd_test/image'       # the path of images folder
+_C.DATASET.LABELROOT = '/opt/ml/bdd_test/label'      # the path of det_annotations folder
+_C.DATASET.MASKROOT = '/opt/ml/bdd_test/da'                # the path of da_seg_annotations folder
+_C.DATASET.LANEROOT = '/opt/ml/bdd_test/lane'"""            # the path of ll_seg_annotations folder
+
+"""_C.DATASET.DATAROOT = '/opt/ml/lane_for_yolop/image'       # the path of images folder
+_C.DATASET.LABELROOT = '/opt/ml/lane_for_yolop/label'      # the path of det_annotations folder
+_C.DATASET.MASKROOT = '/opt/ml/lane_for_yolop/seg_gt'                # the path of da_seg_annotations folder
+_C.DATASET.LANEROOT = '/opt/ml/lane_for_yolop/lane_gt' """              # the path of ll_seg_annotations folder
+
 _C.DATASET.DATASET = 'BddDataset'
 _C.DATASET.TRAIN_SET = 'train'
 _C.DATASET.TEST_SET = 'val'
@@ -93,7 +105,7 @@ _C.TRAIN.BEGIN_EPOCH = 0
 _C.TRAIN.END_EPOCH = 240
 
 _C.TRAIN.VAL_FREQ = 1
-_C.TRAIN.BATCH_SIZE_PER_GPU = 48
+_C.TRAIN.BATCH_SIZE_PER_GPU = 32
 _C.TRAIN.SHUFFLE = True
 
 _C.TRAIN.IOU_THRESHOLD = 0.2
