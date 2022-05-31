@@ -169,7 +169,7 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     save_hybrid=False
     log_imgs = min(16,100)
 
-    nc = 7
+    nc = 8
     iouv = torch.linspace(0.5,0.95,10).to(device)     #iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
@@ -177,7 +177,7 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     seen =  0 
     confusion_matrix = ConfusionMatrix(nc=model.nc) #detector confusion matrix
     da_metric = SegmentationMetric(config.num_seg_class) #segment confusion matrix    
-    ll_metric = SegmentationMetric(2) #segment confusion matrix
+    ll_metric = SegmentationMetric(4) #segment confusion matrix
 
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
@@ -202,6 +202,10 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     # switch to train mode
     model.eval()
     jdict, stats, ap, ap_class, wandb_images, wandb_images2 = [], [], [], [], [], []
+
+    # choose image for test plot
+    test_batch = random.randint(0, len(val_loader)-1)
+    class_names = ['person', 'car','bike', 'tl_green', 'tl_red', 'tl_yellow', 'tl_none', 'traffic sign']
 
     for batch_i, (img, target, paths, shapes) in tqdm(enumerate(val_loader), total=len(val_loader)):
         if not config.DEBUG:
@@ -275,7 +279,7 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
                 T_nms.update(t_nms/img.size(0),img.size(0))
 
             if config.TEST.PLOTS:
-                if batch_i == 0:
+                if batch_i == test_batch:
                     for i in range(test_batch_size):
                         img_test = cv2.imread(paths[i])
                         da_seg_mask = da_seg_out[i][:, pad_h:height-pad_h, pad_w:width-pad_w].unsqueeze(0)
@@ -297,7 +301,7 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
                         img_ll = cv2.imread(paths[i])
                         ll_seg_mask = ll_seg_out[i][:, pad_h:height-pad_h, pad_w:width-pad_w].unsqueeze(0)
                         ll_seg_mask = torch.nn.functional.interpolate(ll_seg_mask, scale_factor=int(1/ratio), mode='bilinear')
-                        _, ll_seg_mask = torch.max(ll_seg_mask, 1)
+                        _, ll_seg_mask = torch.max(ll_seg_mask, 1) ## indice로 나옴
 
                         ll_gt_mask = target[2][i][:, pad_h:height-pad_h, pad_w:width-pad_w].unsqueeze(0)
                         ll_gt_mask = torch.nn.functional.interpolate(ll_gt_mask, scale_factor=int(1/ratio), mode='bilinear')
@@ -351,7 +355,7 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
 
             # Predictions
             predn = pred.clone()
-            scale_coords(img[si].shape[1:], predn[:, :4], shapes[si][0], shapes[si][1])  # native-space pred
+            predn[:, :4] = scale_coords(img[si].shape[1:], predn[:, :4], shapes[si][0], shapes[si][1])  # native-space pred
 
             # Append to text file
             if config.TEST.SAVE_TXT:
@@ -385,7 +389,7 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
                                   'bbox': [round(x, 3) for x in b],
                                   'score': round(p[4], 5)})
 
-
+            # move to output2 from output because confusion_matrix is working in demo pred        
             # Assign all predictions as incorrect
             correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool, device=device)
             if nl:
@@ -407,7 +411,14 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
                     if pi.shape[0]:
                         # Prediction to target ious
                         # n*m  n:pred  m:label
+                        # print("--------------")
+                        # print(len(predn[pi, :4]))
+                        # print(len(tbox[ti]))
                         ious, i = box_iou(predn[pi, :4], tbox[ti]).max(1)  # best ious, indices
+                        # print("=========")
+                        # print(box_iou(predn[pi, :4], tbox[ti]))
+                        # print(ious)
+                        # print(i)
                         # Append detections
                         detected_set = set()
                         for j in (ious > iouv[0]).nonzero(as_tuple=False):
@@ -418,6 +429,11 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
                                 correct[pi[j]] = ious[j] > iouv  # iou_thres is 1xn
                                 if len(detected) == nl:  # all targets already located in image
                                     break
+
+            # Append statistics (correct, conf, pcls, tcls)
+            stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
+
+
         for si, pred in enumerate(output2):
             if config.TEST.PLOTS and len(wandb_images2) < log_imgs:
                 box_data = [{"position": {"minX": xyxy[0], "minY": xyxy[1], "maxX": xyxy[2], "maxY": xyxy[3]},
@@ -429,8 +445,10 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
                 if wandb:
                     wandb_images2.append(wandb.Image(img[si], boxes=boxes, caption=path.name))
 
-            # Append statistics (correct, conf, pcls, tcls)
-            stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
+            labels = target[0][target[0][:, 0] == si, 1:]     #all object in one image 
+            nl = len(labels)    # num of object
+                    
+            
 
         if config.TEST.PLOTS and batch_i < 3:
             f = save_dir +'/'+ f'test_batch{batch_i}_labels.jpg'  # labels
@@ -455,12 +473,12 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     # Print results
     pf = '%20s' + '%12s' * 6  # print format
     print('\n')
-    print(pf % ('Class', 'seen', 'predictions', 'precision', 'recall', 'mAP50', 'mAP'))
+    print(pf % ('Class', 'seen', 'targets', 'precision', 'recall', 'mAP50', 'mAP'))
     pf = '%20s' + '%12.3g' * 6  # print format
     print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
     #print(map70)
     #print(map75)
-    class_names = ['person', 'car','bike', 'tl_green', 'tl_red', 'tl_none', 'traffic sign']
+    class_names = ['person', 'car','bike', 'tl_green', 'tl_red', 'tl_yellow', 'tl_none', 'traffic sign']
     # Print results per class
     if (verbose or (nc <= 20 and not training)) and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):
@@ -526,7 +544,7 @@ def validate(epoch,config, val_loader, val_dataset, model, criterion, output_dir
     # print('mp:{},mr:{},map50:{},map:{}'.format(mp, mr, map50, map))
     #print segmet_result
     t = [T_inf.avg, T_nms.avg]
-    return da_segment_result, ll_segment_result, detect_result, losses.avg, maps, t
+    return da_segment_result, ll_segment_result, detect_result, losses.avg, maps, t, map50
         
 
 

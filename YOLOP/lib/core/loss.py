@@ -72,7 +72,7 @@ class MultiHeadLoss(nn.Module):
         # Class label smoothing https://arxiv.org/pdf/1902.04103.pdf eqn 3
         cp, cn = smooth_BCE(eps=0.0)
 
-        BCEcls, BCEobj, BCEseg = self.losses
+        BCEcls, BCEobj, BCEseg, CEseg = self.losses
 
         # Calculate Losses
         nt = 0  # number of targets
@@ -111,11 +111,20 @@ class MultiHeadLoss(nn.Module):
         drive_area_seg_targets = targets[1].view(-1)
         lseg_da = BCEseg(drive_area_seg_predicts, drive_area_seg_targets)
 
-        lane_line_seg_predicts = predictions[2].view(-1)
-        lane_line_seg_targets = targets[2].view(-1)
-        lseg_ll = BCEseg(lane_line_seg_predicts, lane_line_seg_targets)
+        #lane_line_seg_predicts = predictions[2].view(-1)
+        #lane_line_seg_targets = targets[2].view(-1)
 
-        metric = SegmentationMetric(2)
+        lane_line_seg_targets = torch.zeros(targets[2].shape[0], 384, 640).to(device)
+        lane_target = targets[2].permute(1, 0, 2, 3)
+        lane_line_seg_targets[lane_target[0]==1] = 0
+        
+        lane_line_seg_targets[lane_target[1]==1] = 1
+        lane_line_seg_targets[lane_target[2]==1] = 2
+        lane_line_seg_targets[lane_target[3]==1] = 3
+
+        lseg_ll = CEseg(predictions[2], lane_line_seg_targets.long())
+        
+        metric = SegmentationMetric(4)
         nb, _, height, width = targets[1].shape
         pad_w, pad_h = shapes[0][1][1]
         pad_w = int(pad_w)
@@ -187,12 +196,15 @@ def get_loss(cfg, device):
     BCEobj = nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([cfg.LOSS.OBJ_POS_WEIGHT])).to(device)
     # segmentation loss criteria
     BCEseg = nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([cfg.LOSS.SEG_POS_WEIGHT])).to(device)
+    # lane line loss
+    CEseg = nn.CrossEntropyLoss().to(device)
     # Focal loss
     gamma = cfg.LOSS.FL_GAMMA  # focal loss gamma
     if gamma > 0:
         BCEcls, BCEobj = FocalLoss(BCEcls, gamma), FocalLoss(BCEobj, gamma)
+        BCEseg = FocalLoss(BCEseg, gamma)
 
-    loss_list = [BCEcls, BCEobj, BCEseg]
+    loss_list = [BCEcls, BCEobj, BCEseg, CEseg]
     loss = MultiHeadLoss(loss_list, cfg=cfg, lambdas=cfg.LOSS.MULTI_HEAD_LAMBDA)
     return loss
 

@@ -100,7 +100,7 @@ def main():
 
     model = model.to(device)
     model.gr = 1.0
-    model.nc = 13
+    model.nc = 8
     print('bulid model finished')
 
     print("begin to load data")
@@ -138,7 +138,7 @@ def main():
     print('load data finished')
 
     epoch = 0 #special for test
-    da_segment_results,ll_segment_results,detect_results, total_loss,maps, times = validate(
+    da_segment_results,ll_segment_results,detect_results, total_loss,maps, times, map_50 = validate(
         epoch,cfg, valid_loader, valid_dataset, model, criterion,
         final_output_dir, tb_log_dir, writer_dict,
         logger, device, wandb=wandb

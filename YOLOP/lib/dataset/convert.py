@@ -11,7 +11,7 @@
 # 'caravan': 36, 'motorcycle': 37, 'trailer': 38, 'train': 39,
 # 'truck': 40       
 # }
-id_dict = {'person': 0, 'car': 1, 'bike': 2, 'tl_green': 3, 'tl_red': 4, 'tl_none': 5, 'traffic sign': 6}
+id_dict = {'person': 0, 'car': 1, 'bike': 2, 'tl_green': 3, 'tl_red': 4, 'tl_yellow': 5,'tl_none': 6, 'traffic sign': 7}
 id_dict_single = {'car': 0, 'bus': 1, 'truck': 2,'train': 3}
 # id_dict = {'car': 0, 'bus': 1, 'truck': 2}
 
