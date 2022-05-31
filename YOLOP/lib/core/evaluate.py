@@ -123,14 +123,24 @@ class ConfusionMatrix:
         Returns:
             None, updates confusion matrix accordingly
         """
+        
+        #detections = detections * torch.tensor([2, 2, 2, 2, 1, 1], device=detections.device)
+        
+        #detection = torch.tensor(detections)
+        #detection[0] = detection[0] * torch.tensor([2, 2, 2, 2, 1, 1], device=detections.device)
+        #print(detection[0])
+
+
         detections = detections[detections[:, 4] > self.conf]
         gt_classes = labels[:, 0].int()
-        detection_classes = detections[:, 5].int()
-        iou = general.box_iou(labels[:, 1:], detections[:, :4])
+        detection_classes = detections[:, 5].int() # 박스들 순서대로 클래스를 써놓은 것
+        iou = general.box_iou(labels[:, 1:], detections[:, :4]) # 박스들 순서대로 IoU가 나올 듯, (N, M, 1)의 형태 N은 gt box 개수, M은 박스 갯수, 1은 IoU
+        #print(iou)
 
-        x = torch.where(iou > self.iou_thres)
-        if x[0].shape[0]:
-            matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()
+        x = torch.where(iou > self.iou_thres) # IoU가 Threshold보다 높은 것들 인덱스 추출 (tensor([?,?,?]),tensor([?,?,?]),...차원의 개수만큼 tensor가 나옴, 0차원텐서, 1차원텐서, 2차원텐서) 형태로 출력
+        #print(x)
+        if x[0].shape[0]: # threshold보다 높은 박스의 개수
+            matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy() # (M, 4) M는 박스 개수, 4중에 3개는 label들 중 IoU가 threshold 이상인 인덱스, 하나는 IoU 값
             if x[0].shape[0] > 1:
                 matches = matches[matches[:, 2].argsort()[::-1]]
                 matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
@@ -138,7 +148,6 @@ class ConfusionMatrix:
                 matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
         else:
             matches = np.zeros((0, 3))
-
         n = matches.shape[0] > 0
         m0, m1, _ = matches.transpose().astype(np.int16)
         for i, gc in enumerate(gt_classes):

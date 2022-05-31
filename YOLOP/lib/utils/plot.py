@@ -27,12 +27,13 @@ def show_seg_result(img, result, index, epoch, save_dir=None, is_ll=False,palett
     # seg = result[0]
     if palette is None:
         palette = np.random.randint(
-                0, 255, size=(3, 3))
+                0, 255, size=(4, 3))
     palette[0] = [0, 0, 0]
-    palette[1] = [0, 255, 0]
-    palette[2] = [255, 0, 0]
+    palette[1] = [255, 0, 0]
+    palette[2] = [0, 0, 255]
+    palette[3] = [255, 255, 255]
     palette = np.array(palette)
-    assert palette.shape[0] == 3 # len(classes)
+    assert palette.shape[0] == 4 # len(classes)
     assert palette.shape[1] == 3
     assert len(palette.shape) == 2
     
@@ -47,7 +48,9 @@ def show_seg_result(img, result, index, epoch, save_dir=None, is_ll=False,palett
         #     color_area[result[0] == label, :] = color
 
         color_area[result[0] == 1] = [0, 255, 0]
-        color_area[result[1] ==1] = [255, 0, 0]
+        color_area[result[1] == 1] = [255, 0, 0]
+        color_area[result[1] == 2] = [0, 0, 255]
+        color_area[result[1] == 3] = [255, 255, 255]
         color_seg = color_area
 
     # convert to BGR

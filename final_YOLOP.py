@@ -18,15 +18,15 @@ import numpy as np
 import torchvision.transforms as transforms
 import PIL.Image as image
 
-from lib.config import cfg
-from lib.config import update_config
-from lib.utils.utils import create_logger, select_device, time_synchronized
-from lib.models import get_net
-from lib.dataset import LoadImages, LoadStreams
-from lib.core.general import non_max_suppression, scale_coords
-from lib.utils import plot_one_box,show_seg_result
-from lib.core.function import AverageMeter
-from lib.core.postprocess import morphological_process, connect_lane
+from YOLOP.lib.config import cfg
+from YOLOP.lib.config import update_config
+from YOLOP.lib.utils.utils import create_logger, select_device, time_synchronized
+from YOLOP.lib.models import get_net
+from YOLOP.lib.dataset import LoadImages, LoadStreams
+from YOLOP.lib.core.general import non_max_suppression, scale_coords
+from YOLOP.lib.utils import plot_one_box,show_seg_result
+from YOLOP.lib.core.function import AverageMeter
+from YOLOP.lib.core.postprocess import morphological_process, connect_lane
 from tqdm import tqdm
 normalize = transforms.Normalize(
         #mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
@@ -125,7 +125,7 @@ def detect(cfg,opt):
         
         ll_predict = ll_seg_out[:, :,pad_h:(height-pad_h),pad_w:(width-pad_w)]
         ll_seg_mask = torch.nn.functional.interpolate(ll_predict, scale_factor=int(1/ratio), mode='bilinear')
-        _, ll_seg_mask = torch.max(ll_seg_mask, 1)##########이부분 맥스면 0,1중에 하나 뱉음 0,1,2,3중에 하나가 아니라
+        _, ll_seg_mask = torch.max(ll_seg_mask, 1)
         ll_seg_mask = ll_seg_mask.int().squeeze().cpu().numpy()
         # Lane line post-processing
         #ll_seg_mask = morphological_process(ll_seg_mask, kernel_size=7, func_type=cv2.MORPH_OPEN)
@@ -167,13 +167,13 @@ def detect(cfg,opt):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', nargs='+', type=str, default='/opt/ml/final-project-level3-cv-08/YOLOP/runs/BddDataset/model_best_train_seg_only.pth', help='model.pth path(s)')
-    parser.add_argument('--source', type=str, default='inference/videos', help='source')  # file/folder   ex:inference/images
+    parser.add_argument('--weights', nargs='+', type=str, default='/opt/ml/final-project-level3-cv-08/YOLOP/weights/End-to-end.pth', help='model.pth path(s)')
+    parser.add_argument('--source', type=str, default='/opt/ml/bdd_for_yolop copy/bdd100k/images/100k/test', help='source')  # file/folder   ex:inference/images
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
     parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--save-dir', type=str, default='inference/output', help='directory to save results')
+    parser.add_argument('--save-dir', type=str, default='/opt/ml/final_ouput', help='directory to save results')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--update', action='store_true', help='update all models')
     opt = parser.parse_args()
