@@ -7,7 +7,7 @@ from typing import List, Union, Optional, Dict, Any, Set, AnyStr
 from datetime import datetime
 from PIL import Image
 
-from app.model import get_model, predict_from_image_byte, predict_from_image
+from app.model import get_model, predict_from_image_byte, predict_from_image, predict_from_video
 from lib.core.general import non_max_suppression, scale_coords
 from lib.utils import plot_one_box, show_seg_result
 from lib.models.YOLOP import MCnet
@@ -96,24 +96,40 @@ async def make_order(files: List[UploadFile] = File(...),
 async def common_parameters(option:str = "None"):
     return {"option": option}
 
-@app.post("/prepared_order/{option}", description="준비된 이미지 주문을 요청합니다")
+@app.post("/prepared_order/{option}", description="준비된 이미지, 비디오 주문을 요청합니다")
 async def make_prepared_order(option: str,
                      model: MCnet = Depends(get_model)):
     products = []
     from lib.models.YOLOP import MCnet
-    options = {
-        'Scene A': '/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/cabf7be1-36a39a28.jpg', 
-        'Scene B': '/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg', 
+    scene_options = {
+        'Scene A': '/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg', 
+        'Scene B': '/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/cabf7be1-36a39a28.jpg', 
         'Scene C': '/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/f3c744e5-1f611c0a.jpg'
     }
-    img_path = options[option]
-    image = Image.open(img_path)
-    img_det, inf_time, plot_time = predict_from_image(model=model, image=image)
-    product = InferenceImageProduct(result=img_det)
-    products.append(product)
+    video_options = {
+        'Video A': '/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4',
+        'Video B': '/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4',
+        'Video C': '/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4'
+    }
+    if option in scene_options:
+        img_path = scene_options[option]
+        image = Image.open(img_path)
+        img_det, inf_time, plot_time = predict_from_image(model=model, image=image)
+        product = InferenceImageProduct(result=img_det)
+        products.append(product)
 
-    new_order = Order(products=products, image_inf_time=inf_time, image_plot_time=plot_time)
-    orders.append(new_order)
+        new_order = Order(products=products, image_inf_time=inf_time, image_plot_time=plot_time)
+        orders.append(new_order)
+
+    elif option in video_options:
+        video_path = video_options[option]
+        img_det, inf_time, plot_time = predict_from_video(model=model, video_path=video_path)
+        product = InferenceImageProduct(result=img_det)
+        products.append(product)
+
+        new_order = Order(products=products, image_inf_time=inf_time, image_plot_time=plot_time)
+        orders.append(new_order)
+
     return new_order
 
 @app.post("/both_order", description="이미지&라이다 주문을 요청합니다")
