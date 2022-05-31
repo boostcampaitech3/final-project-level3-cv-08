@@ -185,7 +185,7 @@ def main():
         if cfg.AUTO_RESUME and os.path.exists(checkpoint_file):
             logger.info("=> loading checkpoint '{}'".format(checkpoint_file))
             checkpoint = torch.load(checkpoint_file)
-            begin_epoch = checkpoint['epoch']
+            begin_epoch = checkpoint['epoch'] - 1
             # best_perf = checkpoint['perf']
             last_epoch = checkpoint['epoch']
             model.load_state_dict(checkpoint['state_dict'])
@@ -325,7 +325,7 @@ def main():
     scaler = amp.GradScaler(enabled=device.type != 'cpu')
     print('=> start training...')
     best_score = 0
-    for epoch in range(begin_epoch, cfg.TRAIN.END_EPOCH+1):
+    for epoch in range(begin_epoch+1, cfg.TRAIN.END_EPOCH+1):
         start = time.time()
         if rank != -1:
             train_loader.sampler.set_epoch(epoch)

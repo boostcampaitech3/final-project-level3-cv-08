@@ -9,7 +9,7 @@ _C.GPUS = (0,)
 _C.WORKERS = 4
 _C.PIN_MEMORY = False
 _C.PRINT_FREQ = 20
-_C.AUTO_RESUME =False      # Resume from the last training interrupt
+_C.AUTO_RESUME =True      # Resume from the last training interrupt
 _C.NEED_AUTOANCHOR = False      # Re-select the prior anchor(k-means)    When training from scratch (epoch=0), set it to be ture!
 _C.DEBUG = False
 _C.num_seg_class = 2
@@ -116,10 +116,10 @@ _C.TRAIN.ANCHOR_THRESHOLD = 4.0
 _C.TRAIN.SEG_ONLY = False           # Only train two segmentation branchs
 _C.TRAIN.DET_ONLY = False           # Only train detection branch
 _C.TRAIN.ENC_SEG_ONLY = False       # Only train encoder and two segmentation branchs
-_C.TRAIN.ENC_DET_ONLY = True       # Only train encoder and detection branch
+_C.TRAIN.ENC_DET_ONLY = False       # Only train encoder and detection branch
 
 # Single task 
-_C.TRAIN.DRIVABLE_ONLY = False      # Only train da_segmentation task
+_C.TRAIN.DRIVABLE_ONLY = True      # Only train da_segmentation task
 _C.TRAIN.LANE_ONLY = False          # Only train ll_segmentation task
 _C.TRAIN.DET_ONLY = False          # Only train detection task
 
