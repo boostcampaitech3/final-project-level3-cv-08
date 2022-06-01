@@ -55,7 +55,7 @@ def parse_args():
     parser.add_argument("--min_hits", 
                         help="Minimum number of associated detections before track is initialised.", 
                         type=int, default=1)
-    parser.add_argument("--centerpoint_threshold", help="Minimum centerpoint for match.", type=float, default=3.0)
+    parser.add_argument("--centerpoint_threshold", help="Minimum centerpoint for match.", type=float, default=2.0)
     parser.add_argument('--out', help='output result file in pickle format')
     parser.add_argument(
         '--fuse-conv-bn',

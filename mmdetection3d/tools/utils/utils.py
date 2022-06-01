@@ -29,7 +29,7 @@ from filterpy.stats import logpdf
 from filterpy.common import pretty_str, reshape_z
 ######################################
 from scipy.optimize import linear_sum_assignment
-
+import time
 np.random.seed(0)
 class KalmanFilterCustom(KalmanFilter):
     def __init__(self, dim_x, dim_z, dim_u=0):
@@ -423,6 +423,7 @@ def match2D3D(bbox_2d, bbox_3d, iou_threshold_2d3d):
     matches_2d3d            : match된 2D, 3D index
     unmatched_indices_2d    : match 안 된 2D index
     unmatched_indices_3d    : match 안 된 3D index
+    iou_matrix              : iou matrix
     """
     iou_matrix           = IoUConfusionMatrix(bbox_2d, bbox_3d)
     x, y                 = linear_sum_assignment(1-iou_matrix)
@@ -454,7 +455,7 @@ def match2D3D(bbox_2d, bbox_3d, iou_threshold_2d3d):
         matches_2d3d = np.concatenate(matches_2d3d)
     else:
         matches_2d3d = np.empty((0, 2))
-    return matches_2d3d, np.array(unmatched_indices_2d), np.array(unmatched_indices_3d)
+    return matches_2d3d, np.array(unmatched_indices_2d), np.array(unmatched_indices_3d), iou_matrix
 
 def toPixelCoord(bbox_3d, v2p_matrix):
     """
@@ -502,11 +503,174 @@ def associate_2d_detections_to_untracked_trackers(unmatched_dets, untracked_trks
     if untracked_trks.shape[0]!=0:
         edge_bbox_3d = center2Edge(bbox_3d=untracked_trks)
         trks_pixel_3d = toPixelCoord(bbox_3d=edge_bbox_3d, v2p_matrix=v2p_matrix)
-        matches_2d3d, _, _ = match2D3D(unmatched_dets, trks_pixel_3d, iou_threshold_2d3d)
+        matches_2d3d, _, _ , iou_matrix= match2D3D(unmatched_dets, trks_pixel_3d, iou_threshold_2d3d)
 
-        return matches_2d3d
+        return matches_2d3d, iou_matrix
     else:
-        return np.empty((0, 2))
+        return np.empty((0, 2)), np.empty((0, 0))
+
+
+def filterPointsByZ(point_in_2d_bbox, bbox_3d):
+    """
+    z축의 값으로 point를 필터링한다.
+
+    point_in_2d_bbox    : (N, 4)
+    bbox_3d             : (3, 8)
+    """
+    z_low, z_high = bbox_3d[2, 0], bbox_3d[2, 4]
+
+    return point_in_2d_bbox[(point_in_2d_bbox[:, 2]>=z_low)&(point_in_2d_bbox[:, 2]<=z_high)]
+
+
+def match2DBboxPoints(bbox_2d, points):
+    """
+    2D bbox와 lidar point를 matching한다.    
+
+    bbox_2d     : (4, )
+    points      : (K, 2)
+
+    return
+    matched_points : (N, ) -> N개의 match된 point index
+    """
+    bbox_2d = bbox_2d[np.newaxis, :]
+    points = points.repeat(2, axis=0).reshape(-1, 4)
+    calculated_matrix = bbox_2d-points
+    matched_points = np.where((calculated_matrix[:, 0]<=0) & (calculated_matrix[:, 2] >= 0) 
+                        & (calculated_matrix[:, 1]<=0) & (calculated_matrix[:, 3]>=0))  
+
+    return matched_points[0]
+
+
+def matchPoints(points, bbox_2d, v2p_matrix):
+    """
+    2D bbox안에 match되는 점들을 구한다.
+
+    velodyne_path  : bin파일 경로
+    image          : numpy array로 된 이미지
+    bbox_2d        : (4, ) 2d bbox
+    v2p_matrix     : (3, 4) velodyne to pixel coord matrix
+
+    return
+    matched_points : (N, ) -> N개의 match된 point index
+    pixel_points   : (K, 2) -> pixel좌표계로 표현된 lidar points
+    """
+    pixel_points = points@v2p_matrix.T
+    pixel_points = (pixel_points[:, :2] / pixel_points[:, 2].reshape(-1, 1)) # (K, 2)
+
+    matched_points = match2DBboxPoints(bbox_2d, pixel_points)
+    return matched_points, pixel_points
+
+def point_in_quadrilateral(pt_x, pt_y, corners):
+    """
+    네개의 꼭지점으로 이루어진 다각형 안에 점이 속하는지 확인한다.
+
+    corners     :   (4, 2) -> 4개의 꼭지점 좌표
+    pt_x        :   (1, )  -> 확인하고자 하는 점의 x좌표
+    pt_y        :   (1, )  -> 확인하고자 하는 점의 y좌표
+
+    return
+    boolean     :   True일 경우 내부의 점, False일 경우 외부의 점
+    """
+    ab0 = corners[1][0] - corners[0][0]
+    ab1 = corners[1][1] - corners[0][1]
+
+    ad0 = corners[3][0] - corners[0][0]
+    ad1 = corners[3][1] - corners[0][1]
+
+    ap0 = pt_x - corners[0][0]
+    ap1 = pt_y - corners[0][1]
+
+    abab = ab0 * ab0 + ab1 * ab1
+    abap = ab0 * ap0 + ab1 * ap1
+    adad = ad0 * ad0 + ad1 * ad1
+    adap = ad0 * ap0 + ad1 * ap1
+
+    return abab >= abap and abap >= 0 and adad >= adap and adap >= 0
+
+
+def countPointsInBox(bbox_3d_xy, points_filtered):
+    cnt = 0
+    for point in points_filtered:
+        cnt += point_in_quadrilateral(point[0], point[1], bbox_3d_xy)
+
+    return cnt
+
+def findMaxBbox(bbox_3d, points_filtered, shift_size):
+    """
+    4방향으로 shift하면서 최대치의 방향을 구한다. 
+
+    bbox_3d             : (3, 8) -> 8개의 x,y,z 좌표
+    points_filtered     : (N, 4) -> bbox_3d의 z좌표로 filtering된 2D bbox 내부 점들
+
+    return
+    bbox_3d_shifted     : (3, 8) -> 최대로 많은 점을 포함하고 있는 shift된 bbox
+    boolean             : False일 경우 현재가 최대, True일 경우 shift된 bbox가 최대
+    """
+    bbox_3d_xy = bbox_3d[:2, :4].T # (4, 2)
+    dxs = [shift_size, -shift_size, 0, 0, shift_size/2, shift_size, -shift_size, -shift_size]
+    dys = [0, 0, shift_size, -shift_size, shift_size/2, -shift_size, shift_size, -shift_size]
+
+    max_cnt = countPointsInBox(bbox_3d_xy, points_filtered)
+    max_idx = -1
+    for i, (dx, dy) in enumerate(zip(dxs, dys)):
+        bbox_3d_xy_temp = bbox_3d_xy[:] + np.array([[dx, dy]])
+        cnt = countPointsInBox(bbox_3d_xy_temp, points_filtered)
+        if cnt > max_cnt:
+            max_cnt = cnt
+            max_idx = i
+    if max_idx == -1:
+        return bbox_3d, False, np.array([0, 0], dtype=np.float32)
+    else:
+        return bbox_3d + np.array([[dxs[max_idx]], [dys[max_idx]], [0]]), True, np.array([dxs[max_idx], dys[max_idx]], dtype=np.float32)
+
+
+def bbox3dFourEdges(bbox_3d):
+    """
+    bbox_3d : 이미지 pixel좌표계의 3d bbox (8 corners) -> (N, 2, 8) -> 8개의 꼭지점 좌표
+    """
+    four_edge_3ds = []
+    for bbox_3d in bbox_3d:
+        four_edge_3d = [bbox_3d[0, :].min(), bbox_3d[1, :].min(), bbox_3d[0, :].max(), bbox_3d[1, :].max()]
+        four_edge_3ds.append(four_edge_3d)
+    four_edge_3ds = np.array(four_edge_3ds)
+
+    return four_edge_3ds.squeeze()
+
+    
+def recursiveFindBestFit(bbox_edges, points_filtered, v2p_matrix, bbox_2d_check, prev_iou, shift_size):
+    """
+    3D bbox와 매칭된 2D bbox를 이용하여 recursive하게 3D bbox의 좌표를 보정
+
+    bbox_edges      : (N, 3, 8)
+    points_filtered : (K, 4)
+    v2p_matrix      : (3, 4)
+    prev_iou        : 초기 iou값
+    shift_size      : 매 루프마다 이동할 거리 (m단위)
+    
+    return
+    final_shifted   : 최종 이동 양 (x,y 방향 m단위)
+    bbox_edges      : (N, 3, 8) -> 최종 보정된 8개의 꼭지점 좌표
+    final_four_edges_2d : (4, ) -> 최종 3D에서 2D로 변환된 좌표
+    """
+    
+    final_shifted       = np.array([0, 0], dtype=np.float32)
+    final_four_edges_2d = bbox3dFourEdges(bbox_edges)
+    while True:
+        bbox_edges_new, shifted, total_shift = findMaxBbox(bbox_edges[0], points_filtered, shift_size)
+        if shifted:
+            bbox_edges_pixel    = toPixelCoord(bbox_edges_new[np.newaxis, :, :], v2p_matrix)
+            four_edges_2d       = bbox3dFourEdges(bbox_edges_pixel)
+            iou                 = IoU(four_edges_2d, bbox_2d_check)
+            if iou > prev_iou:
+                bbox_edges = bbox_edges_new[np.newaxis, :, :]
+                final_shifted += total_shift
+                final_four_edges_2d = four_edges_2d
+                prev_iou = iou
+            else:
+                break
+        else:
+            break
+    return final_shifted, bbox_edges, final_four_edges_2d
 
 class SortCustom(object):
     def __init__(self, v2p_matrix, iou_threshold, max_age=1, min_hits=3, centerpoint_threshold=0.35):
@@ -521,7 +685,7 @@ class SortCustom(object):
         self.trackers = []
         self.frame_count = 0
 
-    def update(self, dets=np.empty((0, 9)), dets_pixel_2d=np.empty((0, 4))):
+    def update(self, dets=np.empty((0, 9)), dets_pixel_2d=np.empty((0, 4)), points_filtered=np.empty((0, 4))):
         """
         Params:
         dets - a numpy array of detections in the format [[x,y,rot,w,l,score],[x,y,rot,w,l,score],...]
@@ -575,15 +739,27 @@ class SortCustom(object):
         # find unmatched 2D
         edge_bbox_3d = center2Edge(bbox_3d=dets)
         dets_pixel_3d = toPixelCoord(bbox_3d=edge_bbox_3d, v2p_matrix=self.v2p_matrix)
-        matches_2d3d, unmatched_indices_2d, unmatched_indices_3d = match2D3D(dets_pixel_2d, dets_pixel_3d, self.iou_threshold)
+        matches_2d3d, unmatched_indices_2d, unmatched_indices_3d, _ = match2D3D(dets_pixel_2d, dets_pixel_3d, self.iou_threshold)
 
         # match unmatched 3D tracking & unmatched 2D
-        matches_2dtrks = associate_2d_detections_to_untracked_trackers(dets_pixel_2d[unmatched_indices_2d.astype(np.int64)], trks_total_coordinate[unmatched_trks.astype(np.int64)], self.v2p_matrix, self.iou_threshold)
+        matches_2dtrks, iou_matrix = associate_2d_detections_to_untracked_trackers(dets_pixel_2d[unmatched_indices_2d.astype(np.int64)], trks_total_coordinate[unmatched_trks.astype(np.int64)], self.v2p_matrix, self.iou_threshold)
 
-        # update 2d matched prediction
+        # update 2d matched prediction with recursive 3D coordinate correction
         for m_2dtrk in matches_2dtrks:
-            #print()
-            #print(m_2dtrk, self.trackers[unmatched_trks[m_2dtrk[1]]].id)
+            bbox_2d_check = dets_pixel_2d[unmatched_indices_2d[m_2dtrk[0]]]
+            bbox_3d_check = self.trackers[unmatched_trks[m_2dtrk[1]]].value # x,y,z,w,l,h
+            bbox_3d_check_edge = center2Edge(bbox_3d=bbox_3d_check[np.newaxis, :])
+            matched_points, pixel_points = matchPoints(points_filtered, bbox_2d_check, self.v2p_matrix)
+            points_filtered_matched = points_filtered[matched_points]
+            points_filtered_matched = filterPointsByZ(points_filtered_matched, bbox_3d_check_edge[0])
+            first_iou = iou_matrix[m_2dtrk[0], m_2dtrk[1]]
+            final_shifted, final_bbox_edges, final_four_edges_2d = recursiveFindBestFit(bbox_3d_check_edge, 
+                                                                                        points_filtered_matched, 
+                                                                                        self.v2p_matrix, 
+                                                                                        bbox_2d_check, 
+                                                                                        first_iou, 
+                                                                                        0.2)
+            self.trackers[unmatched_trks[m_2dtrk[1]]].value += np.array([final_shifted[0], final_shifted[1], 0, 0, 0, 0, 0])
             self.trackers[unmatched_trks[m_2dtrk[1]]].update(self.trackers[unmatched_trks[m_2dtrk[1]]].value)
 
         # update matched trackers with assigned detections
@@ -916,13 +1092,16 @@ def detection2Bev(label, frame):
                                 cls_id[:, np.newaxis]], axis=1)
     return detections
 
+
 def lidar2Bev(velodyne_path):
     vd = 0.4
     vh = 0.1
     vw = 0.1
-
-    xrange = (0, 40.4)
-    yrange = (-30, 30)
+    
+    # xrange = (0, 40.4)
+    # yrange = (-30, 30)
+    xrange = (0, 70.4)
+    yrange = (-40, 40)
     zrange = (-3, 1)
 
     W = math.ceil((xrange[1] - xrange[0]) / vw)
@@ -940,7 +1119,7 @@ def lidar2Bev(velodyne_path):
 
     if not os.path.exists(velodyne_path):
         print(f'{velodyne_path} not exists!!!!!!')
-        return np.zeros((height, width, channel)), np.zeros((height, width))
+        return np.zeros((height, width, channel)), np.zeros((height, width)), np.empty((0, 4))
 
     lidar = np.fromfile(velodyne_path, dtype=np.float32).reshape(-1, 4)
 
@@ -1026,7 +1205,7 @@ def lidar2Bev(velodyne_path):
     # 최대값으로 나눠주어 0~1사이 값으로 만들고 255를 곱해주어 픽셀 값으로 만들어줌
     # top_image = np.dstack((top_image, top_image, top_image)).astype(np.uint8)
 
-    return top, density_image
+    return top, density_image, lidar
 
 def bevPoints(trackers):
     xy = trackers[:, :2]
@@ -1034,8 +1213,10 @@ def bevPoints(trackers):
     lw = trackers[:, 3:5]
 
     v = 0.1
-    xrange = (0, 40.4)
-    yrange = (-30, 30)
+    # xrange = (0, 40.4)
+    # yrange = (-30, 30)
+    xrange = (0, 70.4)
+    yrange = (-40, 40)
     xy_range = np.array([xrange[0], yrange[0]]).reshape(2, -1)
 
     W = math.ceil((xrange[1] - xrange[0]) / v)

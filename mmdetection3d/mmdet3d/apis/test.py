@@ -114,12 +114,13 @@ def single_gpu_test(model,
 
             img_det = show_seg_result(img_det, (da_seg_out, ll_seg_out), _, _, is_demo=True)
             if len(det):
-                det[:,:4] = scale_coords(img.shape[2:],det[:,:4],img_det.shape).round()
+                # det[:,:4] = scale_coords(img.shape[2:],det[:,:4],img_det.shape).round()
+                det[:, :4] *= torch.tensor([1242/640, 375/384, 1242/640, 375/384]).cuda()
                 for *xyxy,conf,cls in reversed(det):
                     label_det_pred = f'{names[int(cls)]} {conf:.2f}'
                     plot_one_box(xyxy, img_det, label=label_det_pred, color=colors[int(cls)], line_thickness=2)
             
-            cv2.imwrite(f'/opt/ml/images/2D/image{i:06d}.png', img_det)
+            cv2.imwrite(f'/opt/ml/images/2D_recursive_sort/image{i:06d}.png', img_det)
 
             """
             3D start
@@ -137,7 +138,7 @@ def single_gpu_test(model,
             
             # 모든 lidar BEV view
             velodyne_path = dataset[i]['img_metas'][0].data['pts_filename']
-            top, density_image = lidar2Bev(velodyne_path)
+            top, density_image, points_filtered = lidar2Bev(velodyne_path)
             
             # 모든 detection BEV view
             # total_det는 n x 8 numpy array -> x, y, z, l, w, h, yaw, score, cls_id
@@ -145,7 +146,7 @@ def single_gpu_test(model,
             indices = np.where(labels['scores_3d'] >= 0.6)
             total_det = np.concatenate((labels['boxes_3d'].tensor.numpy()[indices], labels['scores_3d'].numpy()[indices][:, np.newaxis], labels['labels_3d'].numpy()[indices][:, np.newaxis]), axis=1)
             # tracking
-            trackers = mot_tracker.update(total_det, bbox_2d[:, :4])
+            trackers = mot_tracker.update(total_det, bbox_2d[:, :4], points_filtered)
             # x,y,rot,h,w -> x1,y1,x2,y2,x3,y3,x4,y4
 
             # print(trackers) -> x, y, rot, l, w, tracking_id, cls_id, score, updated_coordinate(x, y, z, w, l, h, yaw)
@@ -165,7 +166,7 @@ def single_gpu_test(model,
             #     cv2.putText(density_image, str(j)+name[j], (x_max, y_max), 0, 0.7, (0, 0, 255), thickness=2, lineType=cv2.LINE_AA)
             """
             """
-            cv2.imwrite(f'/opt/ml/images/3D/image{i:06d}.png', density_image)
+            cv2.imwrite(f'/opt/ml/images/3D_recursive_sort/image{i:06d}.png', density_image)
 
             for track in trackers:
                 print("%d, %d, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f"%(i, track[5], track[8], track[9], track[10], track[11], track[12], track[13], track[14]), file=bbox_3d_txt)

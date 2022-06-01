@@ -59,7 +59,7 @@ def show_seg_result(img, result, index, epoch, save_dir=None, is_ll=False,palett
     # img = img * 0.5 + color_seg * 0.5
     img = img.astype(np.uint8)
 
-    img = cv2.resize(img, (1280,720), interpolation=cv2.INTER_LINEAR)
+    img = cv2.resize(img, (1242,375), interpolation=cv2.INTER_LINEAR)
     if not is_demo:
         if not is_gt:
             if not is_ll:
