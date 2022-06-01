@@ -28,6 +28,7 @@ import numpy.linalg as linalg
 from filterpy.stats import logpdf
 from filterpy.common import pretty_str, reshape_z
 ######################################
+from scipy.optimize import linear_sum_assignment
 
 np.random.seed(0)
 class KalmanFilterCustom(KalmanFilter):
@@ -124,7 +125,7 @@ def linear_assignment(cost_matrix):
         return np.array(list(zip(x, y)))
 
 # iou_batch -> 3D centerpoint batch
-def centerPointBatch(bb_test, bb_gt):
+def centerPointBatch(detection, predict):
     """
     From SORT : computes center point distance between two bboxes in the form [x,y,w,l,rot]
     원래 2D에서는 IoU를 계산하지만, 3D BEV에서는 occlusion이 없기 때문에 IoU를 계산하기보다는
@@ -145,19 +146,19 @@ def centerPointBatch(bb_test, bb_gt):
     !!!일단은 center point만으로 한 번 해보고 성능이 안좋으면 그때 생각해보자!!!
 
     """
-    bb_gt = np.expand_dims(bb_gt, 0)
-    bb_test = np.expand_dims(bb_test, 1)
-    center_dist = ((bb_test[..., 0]-bb_gt[..., 0])**2 + (bb_test[..., 1]-bb_gt[..., 1])**2)**0.5
+    predict = np.expand_dims(predict, 0)
+    detection = np.expand_dims(detection, 1)
+    center_dist = ((detection[..., 0]-predict[..., 0])**2 + (detection[..., 1]-predict[..., 1])**2)**0.5
            
     return(center_dist)  
 
 def convert_bbox_to_z(bbox):
   """
-  Takes a bounding box in the form [x, y, rot, w, l, score] and returns z in the form
-    [x,y,rot,w, l] where x,y is the centre of the box and s is the scale/area and r is
+  Takes a bounding box in the form [x, y, z, l, w, h, rot, score, cls_id] and returns z in the form
+    [x,y,rot,l,w] where x,y is the centre of the box and s is the scale/area and r is
     the aspect ratio
   """
-  new_bbox = bbox[:5] 
+  new_bbox = bbox[[0, 1, 6, 3, 4]] 
   return new_bbox.reshape((-1, 1))
 
 def convert_x_to_bbox(x, score=None):
@@ -170,6 +171,8 @@ def convert_x_to_bbox(x, score=None):
   else:
     return np.array([x[0], x[1], x[2], x[3], x[4], score]).reshape((1,6))
 
+
+
 class KalmanBoxTracker(object):
     """
     This class represents the internal state of individual tracked objects observed as bbox.
@@ -180,8 +183,9 @@ class KalmanBoxTracker(object):
         Initialises a tracker using initial bounding box.
         """
         #define constant velocity model
-        self.cls_id = bbox[6]
-        self.score = bbox[5]
+        self.cls_id = bbox[8]
+        self.score = bbox[7]
+        self.value = bbox[:7]
         self.kf = KalmanFilterCustom(dim_x=8, dim_z=5)
         self.kf.F = np.array([[1,0,0,0,0,1,0,0],
                             [0,1,0,0,0,0,1,0],
@@ -247,13 +251,18 @@ class KalmanBoxTracker(object):
             self.hit_streak = 0
         self.time_since_update += 1
         self.history.append(convert_x_to_bbox(self.kf.x))
+        # x, y, yaw, w, l
+        # self.history[-1] : x, y, rot, w, l
+        # self.value : x, y, z, w, l, h, rot, score, cls_id
+        self.value[[0, 1, 6, 3, 4]] = self.history[-1]
         return self.history[-1]
 
     def get_state(self):
         """
         Returns the current bounding box estimate.
         """
-        return convert_x_to_bbox(self.kf.x)[0], self.cls_id, self.score
+        return convert_x_to_bbox(self.kf.x)[0], self.cls_id, self.score, self.value
+        # x,y,rot,w,l / cls_id / score / updated coordinate(x, y, z, w, l, h, rot, score, cls_id) 
 
     
 
@@ -314,7 +323,7 @@ class Sort(object):
         self.trackers = []
         self.frame_count = 0
 
-    def update(self, dets=np.empty((0, 6))):
+    def update(self, dets=np.empty((0, 9))):
         """
         Params:
         dets - a numpy array of detections in the format [[x,y,rot,w,l,score],[x,y,rot,w,l,score],...]
@@ -337,19 +346,27 @@ class Sort(object):
         for t in reversed(to_del):
             self.trackers.pop(t)
         matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(dets, trks, self.centerpoint_threshold)
+        # 3D와 tracking으로 predict된 객체와 matching 진행
+        # matched           : match된 detection과 prediction
+        # unmatched_dets    : match가 되지 않은 detections
+        # unmatched_trks    : match가 되지 않은 detections
+        
+        
         # update matched trackers with assigned detections
         for m in matched:
+            # print("matched_trks : ", self.trackers[m[1]].id)
             self.trackers[m[1]].update(dets[m[0], :])
 
-        # create and initialise new trackers for unmatched detections
+        # create and initialise new trackers for . detections
         for i in unmatched_dets:
             trk = KalmanBoxTracker(dets[i,:])
             self.trackers.append(trk)
         i = len(self.trackers)
         for trk in reversed(self.trackers):
-            d, cls_id, cls_score = trk.get_state()
+            d, cls_id, cls_score, updated_coord = trk.get_state()
+            
             if (trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits):
-                ret.append(np.concatenate((d,[trk.id+1], [cls_id], [cls_score])).reshape(1,-1)) # +1 as MOT benchmark requires positive
+                ret.append(np.concatenate((d,[trk.id+1], [cls_id], [cls_score], updated_coord)).reshape(1,-1)) # +1 as MOT benchmark requires positive
             i -= 1
             # remove dead tracklet
             if(trk.time_since_update > self.max_age):
@@ -357,6 +374,250 @@ class Sort(object):
         if(len(ret)>0):
             return np.concatenate(ret)
         return np.empty((0,7))
+
+#############################################################################################################################################
+
+
+def IoU(box1, box2):
+    # box = (x1, y1, x2, y2)
+    box1_area = (box1[2] - box1[0] + 1) * (box1[3] - box1[1] + 1)
+    box2_area = (box2[2] - box2[0] + 1) * (box2[3] - box2[1] + 1)
+
+    # obtain x1, y1, x2, y2 of the intersection
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+
+    # compute the width and height of the intersection
+    w = max(0, x2 - x1 + 1)
+    h = max(0, y2 - y1 + 1)
+
+    inter = w * h
+    iou = inter / (box1_area + box2_area - inter)
+    return iou
+
+def IoUConfusionMatrix(bbox_2d, bbox_3d):
+    """
+    bbox_3d : 이미지 pixel좌표계의 3d bbox (8 corners) -> (N, 2, 8) -> 8개의 꼭지점 좌표
+    bbox_2d : 이미지 pixel좌표계의 2d bbox (4 corners) -> (N, 4)    -> 2개의 꼭지점 좌표 (좌상단, 우하단)
+    """
+    four_edge_3ds = []
+    for bbox_3d in bbox_3d:
+        four_edge_3d = [bbox_3d[0, :].min(), bbox_3d[1, :].min(), bbox_3d[0, :].max(), bbox_3d[1, :].max()]
+        four_edge_3ds.append(four_edge_3d)
+    four_edge_3ds = np.array(four_edge_3ds)
+    iou_matrix = np.zeros((bbox_2d.shape[0], four_edge_3ds.shape[0]))
+
+    for i, bbox1 in enumerate(bbox_2d):
+        for j, bbox2 in enumerate(four_edge_3ds):
+            iou_matrix[i, j] = IoU(bbox1, bbox2)
+    
+    return iou_matrix
+
+def match2D3D(bbox_2d, bbox_3d, iou_threshold_2d3d):
+    """
+    bbox_3d : 이미지 pixel좌표계의 3d bbox (8 corners) -> (N, 2, 8) -> 8개의 꼭지점 좌표
+    bbox_2d : 이미지 pixel좌표계의 2d bbox (4 corners) -> (N, 4)    -> 2개의 꼭지점 좌표 (좌상단, 우하단)
+    return
+    matches_2d3d            : match된 2D, 3D index
+    unmatched_indices_2d    : match 안 된 2D index
+    unmatched_indices_3d    : match 안 된 3D index
+    """
+    iou_matrix           = IoUConfusionMatrix(bbox_2d, bbox_3d)
+    x, y                 = linear_sum_assignment(1-iou_matrix)
+    
+    matched_indices      = np.array(list(zip(x,y)))
+    unmatched_indices_3d = []
+    unmatched_indices_2d = []
+    matches_2d3d = []
+    
+
+    if matched_indices.shape[0]==0:
+        matched_indices = np.empty((0, 2))
+
+    for i in range(bbox_2d.shape[0]):
+        if i not in matched_indices[:, 0]:
+            unmatched_indices_2d.append(i)
+    
+    for i in range(bbox_3d.shape[0]):
+        if i not in matched_indices[:, 1]:
+            unmatched_indices_3d.append(i)
+
+    for m in matched_indices:
+        if(iou_matrix[m[0], m[1]] < iou_threshold_2d3d):
+            unmatched_indices_2d.append(m[0])
+            unmatched_indices_3d.append(m[1])
+        else:
+            matches_2d3d.append(m.reshape(1,2))
+    if len(matches_2d3d)!=0:
+        matches_2d3d = np.concatenate(matches_2d3d)
+    else:
+        matches_2d3d = np.empty((0, 2))
+    return matches_2d3d, np.array(unmatched_indices_2d), np.array(unmatched_indices_3d)
+
+def toPixelCoord(bbox_3d, v2p_matrix):
+    """
+    bbox_3d     : (N, 3, 8) -> 8개의 꼭지점 좌표
+    v2p_matrix  : (3, 4)    -> lidar coordinate to pixel coordinate
+    return      : (N, 2, 8) -> 8개의 픽셀 좌표계로 표현된 꼭지점 좌표
+    """
+    bbox_3d_xyz_all = np.ones((bbox_3d.shape[0], 4, 8))
+    bbox_3d_xyz_all[:, :3, :] = bbox_3d
+    bbox_3d_xy_all = []
+    for bbox_3d_xyz in bbox_3d_xyz_all:
+        bbox_3d_xy = v2p_matrix@bbox_3d_xyz
+        bbox_3d_xy = bbox_3d_xy / bbox_3d_xy[2, :].reshape(1, -1)
+        bbox_3d_xy = bbox_3d_xy[:2, :][np.newaxis, :, :]
+        bbox_3d_xy_all.append(bbox_3d_xy)
+   
+    return np.concatenate(bbox_3d_xy_all, axis=0)
+
+def center2Edge(bbox_3d):
+    """
+    bbox_3d : (N, 9) -> (x,y,z,l,w,h,rot,score,cls)
+    return : (N, 3, 8) -> 8개의 꼭지점 좌표
+    """
+    hwl              = bbox_3d[:, [5, 4, 3]]
+    rotation_y_lidar = bbox_3d[:, 6]
+    xyz_lidar        = bbox_3d[:, :3]
+    bbox_edges       = []
+
+    for i, (h,w,l) in enumerate(hwl):
+        trackletBox = np.array([  # in velodyne coordinates around zero point and without orientation yet\
+                    [-l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2], \
+                    [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2], \
+                    [0.0, 0.0, 0.0, 0.0, h, h, h, h]])
+
+        yaw = rotation_y_lidar[i]
+        rotMat = np.array([[np.cos(yaw), -np.sin(yaw), 0.0], 
+                        [np.sin(yaw), np.cos(yaw), 0.0], 
+                        [0.0, 0.0, 1.0]])
+        
+        bbox_edges.append((np.dot(rotMat, trackletBox) + xyz_lidar[i].reshape(-1, 1))[np.newaxis, :, :])
+    bbox_edges = np.concatenate(bbox_edges, axis=0)
+    return bbox_edges
+
+def associate_2d_detections_to_untracked_trackers(unmatched_dets, untracked_trks, v2p_matrix, iou_threshold_2d3d):
+    if untracked_trks.shape[0]!=0:
+        edge_bbox_3d = center2Edge(bbox_3d=untracked_trks)
+        trks_pixel_3d = toPixelCoord(bbox_3d=edge_bbox_3d, v2p_matrix=v2p_matrix)
+        matches_2d3d, _, _ = match2D3D(unmatched_dets, trks_pixel_3d, iou_threshold_2d3d)
+
+        return matches_2d3d
+    else:
+        return np.empty((0, 2))
+
+class SortCustom(object):
+    def __init__(self, v2p_matrix, iou_threshold, max_age=1, min_hits=3, centerpoint_threshold=0.35):
+        """
+        Sets key parameters for SORT
+        """
+        self.iou_threshold = iou_threshold
+        self.v2p_matrix = v2p_matrix
+        self.max_age = max_age
+        self.min_hits = min_hits
+        self.centerpoint_threshold = centerpoint_threshold
+        self.trackers = []
+        self.frame_count = 0
+
+    def update(self, dets=np.empty((0, 9)), dets_pixel_2d=np.empty((0, 4))):
+        """
+        Params:
+        dets - a numpy array of detections in the format [[x,y,rot,w,l,score],[x,y,rot,w,l,score],...]
+        Requires: this method must be called once for each frame even with empty detections (use np.empty((0, 6)) for frames without detections).
+        Returns the a similar array, where the last column is the object ID.
+
+        NOTE: The number of objects returned may differ from the number of detections provided.
+        """
+        self.frame_count += 1
+
+
+        """
+        Kalman filter로 예측한 좌표와 detect한 좌표를 matching한다. 
+
+        pos               : 예측한 좌표 (x, y, rot, w, l)
+        dets              : (N, 9) -> (x, y, z, w, l, h, rot, score, cls_id)
+        matched           : match된 detection과 prediction
+        unmatched_dets    : match가 되지 않은 detections
+        unmatched_trks    : match가 되지 않은 detections
+        """
+        # get predicted locations from existing trackers.
+        trks = np.zeros((len(self.trackers), 6))
+        trks_total_coordinate = np.zeros((len(self.trackers), 7))
+        to_del = []
+        ret = []
+        for t, trk in enumerate(trks):
+            pos = self.trackers[t].predict()[0]
+            trk[:] = [pos[0], pos[1], pos[2], pos[3], pos[4], 0]
+            trks_total_coordinate[t][:] = self.trackers[t].value
+            if np.any(np.isnan(pos)):
+                to_del.append(t)
+        trks = np.ma.compress_rows(np.ma.masked_invalid(trks))
+        for t in reversed(to_del):
+            self.trackers.pop(t)
+        matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(dets, trks, self.centerpoint_threshold)
+
+        """
+        detection과 tracking이 match가 안 된 이유 가능성 크게 3 종류
+            1. detection이 되지 않아 tracking과 matching이 안됐다. 
+                1-1. tracking이 한 프레임밖에 안돼서 dx,dy가 업데이트가 안 됐을 때 -> 해결 방법이 마땅히 없다. 
+                1-2. tracking이 여러 프레임 됐지만, detection이 안됐다. -> 제일 가능성 높음 -> 2D와 tracking을 matching하여 보완할 수 있을 것 같다. 
+            2-1. tracking하던 객체가 화각을 벗어났다. -> 가능성이 높다.  
+            2-2. 새로운 객체가 등장했다. -> 가능성 높다. 
+            2-1, 2-2의 경우에는 그냥 새롭게 tracking에 추가하면 된다.  
+            3. tracking의 dx, dy가 아직 update되지 않은 첫 번째 track 객체이다. -> 거리 범위를 좀 크게 줘서 가능성이 낮다.
+        """
+
+        """
+        1-2번 가능성을 해결하기 위해서 unmatched 2D와 unmatched tracking matching
+        """
+        # find unmatched 2D
+        edge_bbox_3d = center2Edge(bbox_3d=dets)
+        dets_pixel_3d = toPixelCoord(bbox_3d=edge_bbox_3d, v2p_matrix=self.v2p_matrix)
+        matches_2d3d, unmatched_indices_2d, unmatched_indices_3d = match2D3D(dets_pixel_2d, dets_pixel_3d, self.iou_threshold)
+
+        # match unmatched 3D tracking & unmatched 2D
+        matches_2dtrks = associate_2d_detections_to_untracked_trackers(dets_pixel_2d[unmatched_indices_2d.astype(np.int64)], trks_total_coordinate[unmatched_trks.astype(np.int64)], self.v2p_matrix, self.iou_threshold)
+
+        # update 2d matched prediction
+        for m_2dtrk in matches_2dtrks:
+            #print()
+            #print(m_2dtrk, self.trackers[unmatched_trks[m_2dtrk[1]]].id)
+            self.trackers[unmatched_trks[m_2dtrk[1]]].update(self.trackers[unmatched_trks[m_2dtrk[1]]].value)
+
+        # update matched trackers with assigned detections
+        for m in matched:
+            self.trackers[m[1]].update(dets[m[0], :])
+
+        # create and initialise new trackers for . detections
+        for i in unmatched_dets:
+            trk = KalmanBoxTracker(dets[i,:])
+            self.trackers.append(trk)
+        i = len(self.trackers)
+        for trk in reversed(self.trackers):
+            d, cls_id, cls_score, updated_coord = trk.get_state()
+            if (trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits):
+                ret.append(np.concatenate((d,[trk.id+1], [cls_id], [cls_score], updated_coord)).reshape(1,-1)) # +1 as MOT benchmark requires positive
+            i -= 1
+            # remove dead tracklet
+            if(trk.time_since_update > self.max_age):
+                self.trackers.pop(i)
+        if(len(ret)>0):
+            return np.concatenate(ret)
+        return np.empty((0,15))
+
+############################################################################################################################################
+
+
+
+
+
+
+
+
+
+
 
 def load_kitti_calib(calib_file):
     if not os.path.exists(calib_file):
@@ -811,11 +1072,15 @@ def compute_color_for_id(label):
 
 def drawBbox(box3d, trackers, rotated_points_detections, density_image, frame, tracking_file):
     classes = {0 : 'Pedestrian', 1 : 'Cyclist', 2 : 'Car'}
+    img_2d = density_image[np.newaxis, :, :].repeat(3, 0).transpose(1, 2, 0).astype(np.int32).copy()
+
+    if trackers.shape[0]==0:
+        return img_2d
+
     ids = trackers[:, 5].reshape(-1).astype(np.int32)
     scores = trackers[:, 7].reshape(-1).astype(np.float64)
     labels = trackers[:, 6].reshape(-1)
-    img_2d = density_image[np.newaxis, :, :].repeat(3, 0).transpose(1, 2, 0).astype(np.int32).copy()
-
+    
 
     # ground truth of detections
     for i in range(rotated_points_detections.shape[0]):
@@ -826,7 +1091,7 @@ def drawBbox(box3d, trackers, rotated_points_detections, density_image, frame, t
         y_max = points[:,1].max()
         img_2d = cv2.polylines(img_2d, [points], True, color, thickness=3)
         img_2d = cv2.line(img_2d, ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), color = color, thickness=5)
-        # print('%d, %d, %d, %d, %d'%(frame, ids[i], (points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2, labels[i]), file=tracking_file)
+        # print('%d, %d, %d, %d, %d'%(frame, ids[i], (points[0b][0]+points[2][0])//2, (points[0][1]+points[2][1])//2, labels[i]), file=tracking_file)
         # cv2.putText(img_2d, classes[labels[i]]+str(ids[i])+' : ' + str(scores[i])[:4], (x_max, y_max), 0, 0.7, color, thickness=1, lineType=cv2.LINE_AA)
         # cv2.putText(img_2d, 'frame : ' + str(frame), (5, 30), 0, 0.7, color, thickness=1, lineType=cv2.LINE_AA)
     

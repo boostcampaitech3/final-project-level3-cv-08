@@ -51,7 +51,7 @@ def parse_args():
     parser.add_argument('checkpoint_YOLOP', help='checkpoint file path for YOLOP')
     parser.add_argument("--max_age", 
                         help="Maximum number of frames to keep alive a track without associated detections.", 
-                        type=int, default=2)
+                        type=int, default=1)
     parser.add_argument("--min_hits", 
                         help="Minimum number of associated detections before track is initialised.", 
                         type=int, default=1)
