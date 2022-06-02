@@ -18,7 +18,7 @@ from lib.utils import plot_one_box, show_seg_result, time_synchronized
 import time
 import cv2
 import torch.backends.cudnn as cudnn
-from lib.dataset import LoadImages, LoadStreams
+from lib.dataset import LoadImages
 
 import torchvision.transforms as transforms
 normalize = transforms.Normalize(
@@ -119,7 +119,7 @@ def predict_from_video(model: MCnet, video_path: str):
     colors = [[np.random.randint(0, 255) for _ in range(3)] for _ in range(len(names))]
 
     cudnn.benchmark = True  # set True to speed up constant image size inference
-    dataset = LoadStreams(video_path, img_size=640)
+    dataset = LoadImages(video_path, img_size=640)
     bs = len(dataset)  # batch_size
     
     t0 = time.time()
@@ -129,7 +129,7 @@ def predict_from_video(model: MCnet, video_path: str):
     inf_time = AverageMeter()
     nms_time = AverageMeter()
 
-    for i, (path, img, img_det, vid_cap,shapes) in dataset:
+    for i, (path, img, img_det, vid_cap,shapes) in enumerate(dataset):
         img = transform(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         if img.ndimension() == 3:
@@ -150,8 +150,8 @@ def predict_from_video(model: MCnet, video_path: str):
 
         nms_time.update(t4-t3,img.size(0))
         det=det_pred[0]
-
-        save_path = str('/opt/ml/server_disk' +'/'+ Path(path).name) if dataset.mode != 'stream' else str('/opt/ml/server_disk' + '/' + "web.mp4")
+        #Path(path).name
+        save_path = str('/opt/ml/server_disk' +'/'+ Path(path).name.split('.')[0] + '.webm') if dataset.mode != 'stream' else str('/opt/ml/server_disk' + '/' + "web.mp4")
 
         _, _, height, width = img.shape
         h,w,_=img_det.shape
@@ -192,10 +192,10 @@ def predict_from_video(model: MCnet, video_path: str):
                 if isinstance(vid_writer, cv2.VideoWriter):
                     vid_writer.release()  # release previous video writer
 
-                fourcc = 'mp4v'  # output video codec
+                fourcc = 'VP90'  # output video codec
                 fps = vid_cap.get(cv2.CAP_PROP_FPS)
                 h,w,_=img_det.shape
-                vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*fourcc), fps, (w, h))
+                vid_writer = cv2.VideoWriter(save_path, int(cv2.VideoWriter_fourcc(*fourcc)), fps, (w, h))
             vid_writer.write(img_det)
         
         else:
@@ -206,6 +206,7 @@ def predict_from_video(model: MCnet, video_path: str):
     print('Done. (%.3fs)' % (time.time() - t0))
     print('inf : (%.4fs/frame)   nms : (%.4fs/frame)' % (inf_time.avg,nms_time.avg))
 
+    return save_path, inf_time.avg
 
 
 

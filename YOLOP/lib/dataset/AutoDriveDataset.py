@@ -201,35 +201,47 @@ class AutoDriveDataset(Dataset):
             _,seg1 = cv2.threshold(seg_label,1,255,cv2.THRESH_BINARY)
             _,seg2 = cv2.threshold(seg_label,1,255,cv2.THRESH_BINARY_INV)
 
-        #_,lane1 = cv2.threshold(lane_label,1,255,cv2.THRESH_BINARY)
-        #_,lane2 = cv2.threshold(lane_label,1,255,cv2.THRESH_BINARY_INV)
+        _,lane1 = cv2.threshold(lane_label,1,255,cv2.THRESH_BINARY)
+        _,lane2 = cv2.threshold(lane_label,1,255,cv2.THRESH_BINARY_INV)
         
 
-        lane0 = lane_label.copy()
+        """lane0 = lane_label.copy()
         lane1 = lane_label.copy()
         lane2 = lane_label.copy()
         lane3 = lane_label.copy()
+        lane4 = lane_label.copy()
 
 
-        lane0[lane_label<64] = 255
-        lane0[lane_label>=64] = 0
+        lane0[lane_label==0] = 255
+        lane0[lane_label!=0] = 0
         
         #crosswalk
-        lane1[lane_label<64] = 0
-        lane1[lane_label>=64] = 255
-        lane1[lane_label>128] = 0
+        lane1[lane_label==75] = 255
+        lane1[lane_label!=75] = 0
+        #lane1[lane_label>128] = 0
         
-        #stop_line
-        lane2[lane_label<128] = 0
-        lane2[lane_label>=128] = 255
-        lane2[lane_label>191] = 0
+        #yellow
+        lane2[lane_label==128] = 255
+        lane2[lane_label!=128] = 0
+        #lane2[lane_label>191] = 0
     
-        #traffic_lane
-        lane3[lane_label<191] = 0
-        lane3[lane_label>=191] = 255
+        # curb
+        lane3[lane_label==179] = 255
+        lane3[lane_label!=179] = 0
 
+        # white
+        lane4[lane_label==255] = 255
+        lane4[lane_label!=255] = 0
         
-        
+        cv2.imwrite('/opt/ml/test/test.png', lane_label)
+
+        test = lane_label[lane_label!=0]
+        test = test[test!=75]
+        test = test[test!=128]
+        test = test[test!=179]
+        test = test[test!=255]
+        if len(test)!=0:
+            print(test)"""
 
         #_,seg2 = cv2.threshold(seg_label[:,:,2],1,255,cv2.THRESH_BINARY)
         # # seg1[cutout_mask] = 0
@@ -243,10 +255,11 @@ class AutoDriveDataset(Dataset):
         seg2 = self.Tensor(seg2)
         # seg1 = self.Tensor(seg1)
         # seg2 = self.Tensor(seg2)
-        lane0 = self.Tensor(lane0)
         lane1 = self.Tensor(lane1)
         lane2 = self.Tensor(lane2)
-        lane3 = self.Tensor(lane3)
+        #lane2 = self.Tensor(lane2)
+        #lane3 = self.Tensor(lane3)
+        #lane4 = self.Tensor(lane4)
 
         # seg_label = torch.stack((seg2[0], seg1[0]),0)
         if self.cfg.num_seg_class == 3:
@@ -254,7 +267,7 @@ class AutoDriveDataset(Dataset):
         else:
             seg_label = torch.stack((seg2[0], seg1[0]),0)
             
-        lane_label = torch.stack((lane0[0], lane1[0], lane2[0], lane3[0]),0)
+        lane_label = torch.stack((lane2[0], lane1[0]),0)
         #print(lane_label.shape)
         #print("from dataset", max(np.array(lane_label[1]).flatten()))
 

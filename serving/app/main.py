@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.param_functions import Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from uuid import UUID, uuid4
 from typing import List, Union, Optional, Dict, Any, Set, AnyStr
@@ -11,6 +12,7 @@ from app.model import get_model, predict_from_image_byte, predict_from_image, pr
 from lib.core.general import non_max_suppression, scale_coords
 from lib.utils import plot_one_box, show_seg_result
 from lib.models.YOLOP import MCnet
+import cv2
 
 app = FastAPI()
 
@@ -31,8 +33,8 @@ class Product(BaseModel):
 class Order(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     products: List[Product] = Field(default_factory=list)
-    image_inf_time: float
-    image_plot_time: float
+    image_inf_time: Optional[float]
+    image_plot_time: Optional[float]
     lidar_inf_time: Optional[float]
     lidar_plot_time: Optional[float]
     created_at: datetime = Field(default_factory=datetime.now)
@@ -123,14 +125,17 @@ async def make_prepared_order(option: str,
 
     elif option in video_options:
         video_path = video_options[option]
-        img_det, inf_time, plot_time = predict_from_video(model=model, video_path=video_path)
-        product = InferenceImageProduct(result=img_det)
+        new_video_path, inf_time = predict_from_video(model=model, video_path=video_path)
+        
+        ls = []
+        ls.append(new_video_path)
+        product = InferenceImageProduct(result=ls)
         products.append(product)
-
-        new_order = Order(products=products, image_inf_time=inf_time, image_plot_time=plot_time)
+        new_order = Order(products=products, image_inf_time=inf_time)
         orders.append(new_order)
-
+        
     return new_order
+
 
 @app.post("/both_order", description="이미지&라이다 주문을 요청합니다")
 async def make_order(files: List[UploadFile] = File(...),

@@ -9,7 +9,7 @@ _C.GPUS = (0,)
 _C.WORKERS = 4
 _C.PIN_MEMORY = False
 _C.PRINT_FREQ = 20
-_C.AUTO_RESUME =True      # Resume from the last training interrupt
+_C.AUTO_RESUME =False      # Resume from the last training interrupt
 _C.NEED_AUTOANCHOR = False      # Re-select the prior anchor(k-means)    When training from scratch (epoch=0), set it to be ture!
 _C.DEBUG = False
 _C.num_seg_class = 2
@@ -26,7 +26,7 @@ _C.MODEL = CN(new_allowed=True)
 _C.MODEL.NAME = ''
 _C.MODEL.STRU_WITHSHARE = False     #add share_block to segbranch
 _C.MODEL.HEADS_NAME = ['']
-_C.MODEL.PRETRAINED = "/opt/ml/final-project-level3-cv-08/YOLOP/runs/BddDataset/model_best_train_enc_det_only.pth" # trained parameter /opt/ml/final-project-level3-cv-08/YOLOP/weights/End-to-end.pth
+_C.MODEL.PRETRAINED = "/opt/ml/final-project-level3-cv-08/YOLOP/runs/BddDataset/model_best_train_da_only.pth" # trained parameter /opt/ml/final-project-level3-cv-08/YOLOP/weights/End-to-end.pth
 _C.MODEL.PRETRAINED_DET = ""
 _C.MODEL.IMAGE_SIZE = [640, 640]  # width * height, ex: 192 * 256
 _C.MODEL.EXTRA = CN(new_allowed=True)
@@ -113,13 +113,13 @@ _C.TRAIN.ANCHOR_THRESHOLD = 4.0
 
 # if training 3 tasks end-to-end, set all parameters as True
 # Alternating optimization
-_C.TRAIN.SEG_ONLY = False           # Only train two segmentation branchs
+_C.TRAIN.SEG_ONLY = True           # Only train two segmentation branchs
 _C.TRAIN.DET_ONLY = False           # Only train detection branch
 _C.TRAIN.ENC_SEG_ONLY = False       # Only train encoder and two segmentation branchs
 _C.TRAIN.ENC_DET_ONLY = False       # Only train encoder and detection branch
 
 # Single task 
-_C.TRAIN.DRIVABLE_ONLY = True      # Only train da_segmentation task
+_C.TRAIN.DRIVABLE_ONLY = False      # Only train da_segmentation task
 _C.TRAIN.LANE_ONLY = False          # Only train ll_segmentation task
 _C.TRAIN.DET_ONLY = False          # Only train detection task
 

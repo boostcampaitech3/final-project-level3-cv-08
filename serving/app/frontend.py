@@ -21,12 +21,16 @@ scene_c = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/f3c744e5-1f
 
 video_a = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
 video_b = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
+result_video_b = open('/opt/ml/server_disk/1.webm', 'rb')
 video_c = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
-
+result_video_c = open('/opt/ml/server_disk/1.webm', 'rb')
 
 Scenes = {'Scene A': scene_a, 'Scene B': scene_b, 'Scene C': scene_c}
-
 Videos = {'Video A': video_a, 'Video B': video_b, 'Video C': video_c}
+
+inf_time_b = 0.0
+inf_time_c = 0.0
+result_Videos = {'Video B': (result_video_b, inf_time_b), 'Video C': (result_video_c, inf_time_c)}
 
 
 
@@ -64,7 +68,6 @@ def main():
                     ]
 
             elif selected_item == 'Fusion(Camera & Lidar)':
-                st.error("The 3D Model is preparing...")
                 uploaded_img = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png"])
                 uploaded_lidar = st.file_uploader("Choose an lidar", type=["bin", "bcd.bin", "bcd"])
                 if uploaded_img and uploaded_lidar:
@@ -86,7 +89,7 @@ def main():
             print_image_scene_result(response)
 
         def print_image_scene_result(response):
-            st.text('GPU가 모델학습에 사용중이라면 Inference Time이 0.03s 보다 훨씬 길어질 수 있습니다.')
+            st.text('Inference Time은 한 Frame당 약 0.03s정도 이지만 서빙 과정에서의 문제로 훨씬 길어질 수 있습니다.')
             st.text(f'Image Inference Time: {response.json()["image_inf_time"]:.5f}s')
             st.text(f'Image Plot Time: {response.json()["image_plot_time"]:.5f}s')
             with st.spinner(text='Image Loading...'):
@@ -97,14 +100,15 @@ def main():
             if selected_item == 'Fusion(Camera & Lidar)':
                 if option != 'Upload':
                     with st.spinner(text='In progress...'):
-                        response = requests.post(f"http://localhost:8001/both_prepared_order", option=option)
-                        print_both_scene_result(response)
+                        st.error("The 3D Model is preparing...")
+                        #response = requests.post(f"http://localhost:8001/both_prepared_order", option=option)
+                        #print_both_scene_result(response)
                 else:
-                    st.error("The 3D Model is preparing...")
                     with st.spinner(text='In progress...'):
                         if files:
-                            response = requests.post(f"http://localhost:8001/both_order", files=files)
-                            print_both_scene_result(response)
+                            st.error("The 3D Model is preparing...")
+                            #response = requests.post(f"http://localhost:8001/both_order", files=files)
+                            #print_both_scene_result(response)
                         else:
                             st.error("Please upload files!!")
 
@@ -122,10 +126,9 @@ def main():
                             st.error("Please upload image!!")
 
     elif image_or_video == 'Video':
-        st.error('Preparing...')
         with col4:
             option = st.radio('Please choose or upload video', ('Video A', 'Video B', 'Video C', 'Upload'))
-        
+        st.info('Video A는 직접 모델을 거쳐서 시연되고 Video B, C는 결과물만 보여줍니다.')
         if option == 'Upload':
             if selected_item == 'Camera':
                 uploaded_video = st.file_uploader("Upload an video", type=["mp4", "mov", "avi"])
@@ -137,7 +140,6 @@ def main():
                     ]
 
             elif selected_item == 'Fusion(Camera & Lidar)':
-                st.error("The 3D Model is preparing...")
                 uploaded_video = st.file_uploader("Upload an video", type=["mp4", "mov", "avi"])
                 uploaded_lidar = st.file_uploader("Upload an lidar", type=["bin", "bcd.bin", "bcd"], accept_multiple_files=True)
         
@@ -145,33 +147,55 @@ def main():
             video_bytes = Videos[option].read()
             st.video(video_bytes)
         
+        def print_both_video_result(response):
+            st.text(f'Lidar Inference Time: {response.json()["lidar_inf_time"]:.5f}s')
+            st.text(f'Lidar Plot Time: {response.json()["lidar_plot_time"]:.5f}s')
+            print_image_video_result(response)
+
+        def print_image_video_result(response):
+            st.text('GPU가 모델학습에 사용중이라면 Inference Time이 0.03s 보다 훨씬 길어질 수 있습니다.')
+            st.text(f'Image Inference Time: {response.json()["image_inf_time"]:.5f}s')
+            with st.spinner(text='Image Loading...'):
+                video_path = response.json()["products"][0]["result"][0]
+                video_bytes = open(video_path, 'rb').read()
+                st.video(video_bytes)
 
 
         if st.button('Inference'):
             if selected_item == 'Fusion(Camera & Lidar)':
                 if option != 'Upload':
                     with st.spinner(text='In progress...'):
-                        response = requests.post(f"http://localhost:8001/both_prepared_order", option=option)
-                        print_both_result(response)
+                        st.error("The 3D Model is preparing...")
+                        #response = requests.post(f"http://localhost:8001/both_prepared_order", option=option)
+                        #print_both_video_result(response)
                 else:
-                    st.error("The 3D Model is preparing...")
                     with st.spinner(text='In progress...'):
                         if files:
-                            response = requests.post(f"http://localhost:8001/both_order", files=files)
-                            print_both_result(response)
+                            st.error("The 3D Model is preparing...")
+                            #response = requests.post(f"http://localhost:8001/both_order", files=files)
+                            #print_both_video_result(response)
                         else:
                             st.error("Please upload files!!")
 
             elif selected_item == 'Camera':
                 if option != 'Upload':
                     with st.spinner(text='In progress...'):
-                        response = requests.post(f"http://localhost:8001/prepared_order/{option}")
-                        print_image_result(response)
+                        if option == 'Video A':
+                            response = requests.post(f"http://localhost:8001/prepared_order/{option}")
+                            print_image_video_result(response)
+                        else:
+                            st.text('GPU가 모델학습에 사용중이라면 Inference Time이 0.03s 보다 훨씬 길어질 수 있습니다.')
+                            st.text(f'Inference Time Per Frame: {result_Videos[option][1]:.3f}s')
+                            with st.spinner(text='Video Loading...'):
+                                video_bytes = result_Videos[option][0]
+                                st.video(video_bytes)
+                            
                 else:
                     with st.spinner(text='In progress...'):
                         if files:
-                            response = requests.post(f"http://localhost:8001/order", files=files)
-                            print_image_result(response)
+                            st.error("Preparing...")
+                            #response = requests.post(f"http://localhost:8001/order", files=files)
+                            #print_image_video_result(response)
                         else:
                             st.error("Please upload image!!")
 
