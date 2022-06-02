@@ -497,7 +497,7 @@ YOLOP = [
 [ -1, Conv, [32, 16, 3, 1]],    #39
 [ -1, BottleneckCSP, [16, 8, 1, False]],    #40
 [ -1, Upsample, [None, 2, 'nearest']],  #41
-[ -1, Conv, [8, 4, 3, 1]] #42 Lane line segmentation head 8,2,3,1 중에서 2를 배경+클래스개수로 변경
+[ -1, Conv, [8, 2, 3, 1]] #42 Lane line segmentation head 8,2,3,1 중에서 2를 배경+클래스개수로 변경
 ]
 
 
