@@ -14,7 +14,7 @@ from lib.config import cfg
 from lib.models.YOLOP import MCnet, get_net
 from lib.core.general import non_max_suppression, scale_coords
 from lib.core.function import AverageMeter
-from lib.utils import plot_one_box, show_seg_result, time_synchronized
+from lib.utils import plot_one_box, show_seg_result, time_synchronized, show_seg_result_video
 import time
 import cv2
 import torch.backends.cudnn as cudnn
@@ -33,7 +33,7 @@ transform=transforms.Compose([
         ])
 
 
-def get_model(model_path: str = "/opt/ml/final-project-level3-cv-08/YOLOP/runs/BddDataset/model_best_train_da_only.pth") -> MCnet:
+def get_model(model_path: str = "/opt/ml/final-project-level3-cv-08/YOLOP/runs/BddDataset/model_best_train_seg_only.pth") -> MCnet:
     """Model을 가져옵니다"""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_net(cfg).to(device)
@@ -50,10 +50,12 @@ def _transform_image(image: Image):
         ]
     )
     ori_size = (image.width, image.height)
+    ori_img = image.convert("RGB")
+    ori_img = np.array(ori_img) #1280, 720
     image = image.resize((640, 384))
     image = image.convert("RGB")
-    image_array = np.array(image)
-    return ori_size, image_array, transform(image=image_array)["image"].unsqueeze(0)
+    image_array = np.array(image) #640, 384
+    return ori_size, ori_img, transform(image=image_array)["image"].unsqueeze(0)
 
 
 def predict_from_image_byte(model: MCnet, image_bytes: bytes):
@@ -65,12 +67,13 @@ def predict_from_image(model: MCnet, image: Image):
     half = device.type != 'cpu'
     if half:
         model.half()
-    model.eval()
     ls = []
     names = model.module.names if hasattr(model, 'module') else model.names
+    model.eval()
     colors = [[np.random.randint(0, 255) for _ in range(3)] for _ in range(len(names))]
     with torch.no_grad():
-        ori_size, img_det, transformed_image = _transform_image(image)
+        ori_size, ori_img, transformed_image = _transform_image(image)
+        #img_det = cv2.resize(ori_img, (640, 384))
         transformed_image = transformed_image.to(device)
         transformed_image = transformed_image.half() if half else transformed_image.float()
         if transformed_image.ndimension() == 3:
@@ -88,7 +91,7 @@ def predict_from_image(model: MCnet, image: Image):
         _, ll_seg_out = torch.max(ll_seg_out, 1)
         ll_seg_out = ll_seg_out.int().squeeze().cpu().numpy()
 
-        img_det = show_seg_result(img_det, (da_seg_out, ll_seg_out), _, _, is_demo=True)
+        img_det = show_seg_result(ori_img, (da_seg_out, ll_seg_out), _, _, is_demo=True)
         if len(det):#transformed_image.shape[2:]
             det[:,:4] = scale_coords(transformed_image.shape[2:],det[:,:4],img_det.shape).round() # 가로 세로가 같은 비율로 줄었기 때문에 다른 크기의 사진이라도 같은 비율이면 잘 나오지만 다른 비율이면 모든 연산이 끝난 후 resize를 해줘야한다.
             for *xyxy,conf,cls in reversed(det):
@@ -175,7 +178,7 @@ def predict_from_video(model: MCnet, video_path: str):
         #ll_seg_mask = morphological_process(ll_seg_mask, kernel_size=7, func_type=cv2.MORPH_OPEN)
         #ll_seg_mask = connect_lane(ll_seg_mask)
 
-        img_det = show_seg_result(img_det, (da_seg_mask, ll_seg_mask), _, _, is_demo=True)
+        img_det = show_seg_result_video(img_det, (da_seg_mask, ll_seg_mask), _, _, is_demo=True)
 
         if len(det):
             det[:,:4] = scale_coords(img.shape[2:],det[:,:4],img_det.shape).round()

@@ -201,11 +201,11 @@ class AutoDriveDataset(Dataset):
             _,seg1 = cv2.threshold(seg_label,1,255,cv2.THRESH_BINARY)
             _,seg2 = cv2.threshold(seg_label,1,255,cv2.THRESH_BINARY_INV)
 
-        #_,lane1 = cv2.threshold(lane_label,1,255,cv2.THRESH_BINARY)
-        #_,lane2 = cv2.threshold(lane_label,1,255,cv2.THRESH_BINARY_INV)
+        _,lane1 = cv2.threshold(lane_label,1,255,cv2.THRESH_BINARY)
+        _,lane2 = cv2.threshold(lane_label,1,255,cv2.THRESH_BINARY_INV)
         
 
-        lane0 = lane_label.copy()
+        """lane0 = lane_label.copy()
         lane1 = lane_label.copy()
         lane2 = lane_label.copy()
         lane3 = lane_label.copy()
@@ -226,7 +226,7 @@ class AutoDriveDataset(Dataset):
     
         #traffic_lane
         lane3[lane_label<191] = 0
-        lane3[lane_label>=191] = 255
+        lane3[lane_label>=191] = 255"""
 
         
         
@@ -243,10 +243,10 @@ class AutoDriveDataset(Dataset):
         seg2 = self.Tensor(seg2)
         # seg1 = self.Tensor(seg1)
         # seg2 = self.Tensor(seg2)
-        lane0 = self.Tensor(lane0)
+        #lane0 = self.Tensor(lane0)
         lane1 = self.Tensor(lane1)
         lane2 = self.Tensor(lane2)
-        lane3 = self.Tensor(lane3)
+        #lane3 = self.Tensor(lane3)
 
         # seg_label = torch.stack((seg2[0], seg1[0]),0)
         if self.cfg.num_seg_class == 3:
@@ -254,7 +254,7 @@ class AutoDriveDataset(Dataset):
         else:
             seg_label = torch.stack((seg2[0], seg1[0]),0)
             
-        lane_label = torch.stack((lane0[0], lane1[0], lane2[0], lane3[0]),0)
+        lane_label = torch.stack((lane2[0], lane1[0]),0)
         #print(lane_label.shape)
         #print("from dataset", max(np.array(lane_label[1]).flatten()))
 

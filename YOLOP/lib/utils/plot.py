@@ -49,8 +49,8 @@ def show_seg_result(img, result, index, epoch, save_dir=None, is_ll=False,palett
 
         color_area[result[0] == 1] = [0, 255, 0]
         color_area[result[1] == 1] = [255, 0, 0]
-        color_area[result[1] == 2] = [0, 0, 255]
-        color_area[result[1] == 3] = [255, 255, 255]
+        #color_area[result[1] == 2] = [0, 0, 255]
+        #color_area[result[1] == 3] = [255, 255, 255]
         color_seg = color_area
 
     # convert to BGR
