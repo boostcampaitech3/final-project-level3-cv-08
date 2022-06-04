@@ -79,12 +79,23 @@ class KalmanFilterCustom(KalmanFilter):
         # y = z - Hx
         # error (residual) between measurement and prediction
         self.y = z - dot(H, self.x)
+
+        # 각도가 pi 부근에서는 차이가 적어도 음수에서 양수로 또는 양수에서 음수로 넘어가면서 매우 큰 차이로 나타난다.
+        # 이를 해결해주기 위한 코드
+        # ex) -3.13 -> 3.13일 때, 실제로는 0.02 차이지만 값은 6.26 차이가 된다.
         if abs(self.y[2][0]) > np.pi:
             if self.y[2][0] > 0 :
                 self.y[2][0] = abs(self.y[2][0]) - 2*np.pi
             else:
                 self.y[2][0] = 2*np.pi - abs(self.y[2][0])
 
+        # 100m 회전 반경을 가진 곡선도로에서 횡방향으로 영향을 받지 않기 위한 속도는 50~60km라고 한다. 
+        # 1초에 회전할 수 있는 각도는 0.16rad이고, 10 frame으로 가져오면 0.016rad이 나온다. 
+        # 만약 ego 차량이 우측으로 회전하고, 상대 차량이 좌측으로 회전할 때는 값이 더 클 것이다. 
+        # 대략 2배로 계산하면 0.032값이 나오고, update가 바로 안된다고 했을 때, 0.1정도가 최대일 것이다. 
+        # 
+        if abs(self.y[2][0]) > np.pi/5:
+            self.y[2][0] = 0.0
         # common subexpression for speed
         PHT = dot(self.P, H.T)
 
@@ -207,13 +218,13 @@ class KalmanBoxTracker(object):
         self.kf.Q[5:,5:] *= 0.01
 
         self.kf.x[:5] = convert_bbox_to_z(bbox)
-        self.time_since_update = 0
+        self.time_since_update = 0 # update가 되지 않았을 경우 1증가
         self.id = KalmanBoxTracker.count
         KalmanBoxTracker.count += 1
         self.history = []
-        self.hits = 0
-        self.hit_streak = 0
-        self.age = 0
+        self.hits = 0 # update된 횟수
+        self.hit_streak = 0 # 연속으로 update된 횟수
+        self.age = 0 # 예측한 횟수
 
     def calib_rotation_y(self):
         if self.kf.x[2] > np.pi:
@@ -773,7 +784,7 @@ class SortCustom(object):
         i = len(self.trackers)
         for trk in reversed(self.trackers):
             d, cls_id, cls_score, updated_coord = trk.get_state()
-            if (trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits):
+            if (trk.time_since_update < 2) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits):
                 ret.append(np.concatenate((d,[trk.id+1], [cls_id], [cls_score], updated_coord)).reshape(1,-1)) # +1 as MOT benchmark requires positive
             i -= 1
             # remove dead tracklet

@@ -101,7 +101,7 @@ def single_gpu_test(model,
             
             # 원래 사이즈로 bbox 복원
             bbox_2d = np.array(det[det[:, 5]<=2].detach().cpu())*np.array([1242/640, 375/384, 1242/640, 375/384, 1, 1])
-            
+
             _, _, height, width = img.shape
             h,w,_=img_det.shape
 
