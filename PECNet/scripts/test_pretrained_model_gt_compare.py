@@ -21,7 +21,7 @@ parser = argparse.ArgumentParser(description='PECNet')
 
 parser.add_argument('--num_workers', '-nw', type=int, default=0)
 parser.add_argument('--gpu_index', '-gi', type=int, default=0)
-parser.add_argument('--load_file', '-lf', default="train_2.pt")
+parser.add_argument('--load_file', '-lf', default="PECNET_social_model1.pt")
 parser.add_argument('--num_trajectories', '-nt', default=20) #number of trajectories to sample
 parser.add_argument('--verbose', '-v', action='store_true')
 parser.add_argument('--root_path', '-rp', default="./")
@@ -42,7 +42,7 @@ hyper_params = checkpoint["hyper_params"]
 
 print(hyper_params)
 
-def test(test_dataset, t, model, origin, num, fnum, best_of_n = 1):
+def test(test_dataset, t, model, origin, num, fnum, best_of_n = 20):
 
 	model.eval()
 	assert best_of_n >= 1 and type(best_of_n) == int
@@ -53,15 +53,36 @@ def test(test_dataset, t, model, origin, num, fnum, best_of_n = 1):
 			traj, mask, initial_pos = torch.DoubleTensor(traj).to(device), torch.DoubleTensor(mask).to(device), torch.DoubleTensor(initial_pos).to(device)
 			#x = traj[:, num:num+hyper_params["past_length"], :]
 			# reshape the data
-			x = torch.DoubleTensor(t).to(device)
+			x = torch.DoubleTensor(t[:, :hyper_params["past_length"], :]).to(device)
 			x = x.contiguous().view(-1, x.shape[1]*x.shape[2])
 			x = x.to(device)
+			y = t[:, hyper_params["past_length"]:, :]
 
+			future = y[:, :-1, :]
+			dest = y[:, -1, :]
+			all_l2_errors_dest = []
+			all_guesses = []
 			for index in range(best_of_n):
+
 				dest_recon = model.forward(x, initial_pos, device=device)
 				dest_recon = dest_recon.cpu().numpy()
+				all_guesses.append(dest_recon)
 
-			best_guess_dest = dest_recon
+				l2error_sample = np.linalg.norm(dest_recon - dest, axis = 1)
+				all_l2_errors_dest.append(l2error_sample)
+
+			all_l2_errors_dest = np.array(all_l2_errors_dest)
+			all_guesses = np.array(all_guesses)
+			# average error
+			l2error_avg_dest = np.mean(all_l2_errors_dest)
+
+			# choosing the best guess
+			indices = np.argmin(all_l2_errors_dest, axis = 0)
+
+			best_guess_dest = all_guesses[indices,np.arange(x.shape[0]),  :]
+
+			# taking the minimum error out of all guess
+			l2error_dest = np.mean(np.min(all_l2_errors_dest, axis = 0))
 
 			# back to torch land
 			best_guess_dest = torch.DoubleTensor(best_guess_dest).to(device)
@@ -81,7 +102,7 @@ def test(test_dataset, t, model, origin, num, fnum, best_of_n = 1):
 			for j in range(len(x)):
 				for k in range(8, 16,2):
 					cv2.circle(img1, (int(x[j][k]+origin[0]), int(x[j][k+1]+origin[1])), 1,(0,255,0), 5)
-				for k in range(12):
+				for k in range(6):
 					cv2.circle(img1, (int(pf[j][k][0]+origin[0]), int(pf[j][k][1]+origin[1])), 1,(0,0,255), 5)
 			cv2.imwrite('./result/image{0:06d}.png'.format(fnum+hyper_params["past_length"]-1), img1)
 
@@ -103,7 +124,7 @@ def main():
 			for i in range(len(test_dataset.frame_num[0])-hyper_params["past_length"]):
 				l = int(test_dataset.frame_num[0][i])
 				for traj in test_dataset.trajectory_batches:
-					t = copy.deepcopy(traj[:, i:i+hyper_params["past_length"], :])
+					t = copy.deepcopy(traj[:, i:i+20, :])
 					print(t)
 					origin = copy.deepcopy(t[:, :1, :]).squeeze()
 					t -= t[:, :1, :]
@@ -124,7 +145,7 @@ def main():
 		img_array.append(img)
 	
 	fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-	out = cv2.VideoWriter(f'output_total_custom_total_12.mp4', fourcc, 5, size, True)
+	out = cv2.VideoWriter(f'output_total_gtcompare.mp4', fourcc, 5, size, True)
 	
 	for i in range(len(img_array)):
 		out.write(img_array[i])

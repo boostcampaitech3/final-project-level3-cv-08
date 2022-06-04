@@ -10,7 +10,7 @@ sys.path.append("../utils/")
 import matplotlib.pyplot as plt
 import numpy as np
 from models import *
-from social_utils_eval import *
+from social_utils_add import *
 import yaml
 import cv2
 from skimage import io
@@ -42,7 +42,7 @@ hyper_params = checkpoint["hyper_params"]
 
 print(hyper_params)
 
-def test(test_dataset, t, model, origin, num, fnum, best_of_n = 1):
+def test(test_dataset, model, best_of_n = 1):
 
 	model.eval()
 	assert best_of_n >= 1 and type(best_of_n) == int
@@ -53,7 +53,7 @@ def test(test_dataset, t, model, origin, num, fnum, best_of_n = 1):
 			traj, mask, initial_pos = torch.DoubleTensor(traj).to(device), torch.DoubleTensor(mask).to(device), torch.DoubleTensor(initial_pos).to(device)
 			#x = traj[:, num:num+hyper_params["past_length"], :]
 			# reshape the data
-			x = torch.DoubleTensor(t).to(device)
+			x = traj[:, :hyper_params["past_length"], :]
 			x = x.contiguous().view(-1, x.shape[1]*x.shape[2])
 			x = x.to(device)
 
@@ -75,7 +75,9 @@ def test(test_dataset, t, model, origin, num, fnum, best_of_n = 1):
 			# final overall prediction
 			predicted_future = np.concatenate((interpolated_future, best_guess_dest), axis = 1)
 			predicted_future = np.reshape(predicted_future, (-1, hyper_params["future_length"], 2))
-			img1 = np.asarray(io.imread("./result/image{0:06d}.png".format(fnum+hyper_params["past_length"]-1)))
+
+			return predicted_future / hyper_params["data_scale"]
+			'''img1 = np.asarray(io.imread("./result/image{0:06d}.png".format(fnum+hyper_params["past_length"]-1)))
 			x /= hyper_params["data_scale"]
 			pf = predicted_future / hyper_params["data_scale"]
 			for j in range(len(x)):
@@ -83,7 +85,7 @@ def test(test_dataset, t, model, origin, num, fnum, best_of_n = 1):
 					cv2.circle(img1, (int(x[j][k]+origin[0]), int(x[j][k+1]+origin[1])), 1,(0,255,0), 5)
 				for k in range(12):
 					cv2.circle(img1, (int(pf[j][k][0]+origin[0]), int(pf[j][k][1]+origin[1])), 1,(0,0,255), 5)
-			cv2.imwrite('./result/image{0:06d}.png'.format(fnum+hyper_params["past_length"]-1), img1)
+			cv2.imwrite('./result/image{0:06d}.png'.format(fnum+hyper_params["past_length"]-1), img1)'''
 
 def main():
 	start = time.time()
@@ -91,24 +93,14 @@ def main():
 	model = PECNet(hyper_params["enc_past_size"], hyper_params["enc_dest_size"], hyper_params["enc_latent_size"], hyper_params["dec_size"], hyper_params["predictor_hidden_size"], hyper_params['non_local_theta_size'], hyper_params['non_local_phi_size'], hyper_params['non_local_g_size'], hyper_params["fdim"], hyper_params["zdim"], hyper_params["nonlocal_pools"], hyper_params['non_local_dim'], hyper_params["sigma"], hyper_params["past_length"], hyper_params["future_length"], args.verbose)
 	model = model.double().to(device)
 	model.load_state_dict(checkpoint["model_state_dict"])
-	#test_dataset = SocialDataset(set_name="test", b_size=hyper_params["test_b_size"], t_tresh=hyper_params["time_thresh"], d_tresh=hyper_params["dist_thresh"], verbose=args.verbose)
-	for j in range(1, 615):
-		try:
-			test_dataset = SocialDataset(set_name="test", b_size=j, t_tresh=0, d_tresh=25, verbose=args.verbose)
-		except:
-			continue
-		#average ade/fde for k=20 (to account for variance in sampling)
-		num_samples = 5
-		if int(test_dataset.frame_num[0][-1]-test_dataset.frame_num[0][0]) >= hyper_params["past_length"]:
-			for i in range(len(test_dataset.frame_num[0])-hyper_params["past_length"]):
-				l = int(test_dataset.frame_num[0][i])
-				for traj in test_dataset.trajectory_batches:
-					t = copy.deepcopy(traj[:, i:i+hyper_params["past_length"], :])
-					print(t)
-					origin = copy.deepcopy(t[:, :1, :]).squeeze()
-					t -= t[:, :1, :]
-					t *= hyper_params["data_scale"]
-				test(test_dataset, t, model, origin, num=i, fnum = l, best_of_n = N)
+	test_dataset = SocialDataset(set_name="test", b_size=25, t_tresh=0, d_tresh=25, verbose=args.verbose)
+
+	for traj in test_dataset.trajectory_batches:
+		traj -= traj[:, :1, :]
+		traj *= hyper_params["data_scale"]
+	
+	test(test_dataset, model, best_of_n = N)
+
 	end1 = time.time()
 	
 	# 영상으로 제작	

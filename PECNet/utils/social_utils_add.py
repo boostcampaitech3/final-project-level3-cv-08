@@ -63,7 +63,7 @@ def mark_similar(mask, sim_list):
 			mask[sim_list[i]][sim_list[j]] = 1
 
 
-def collect_data(set_name, dataset_type = 'image', batch_size=20, time_thresh=48, dist_tresh=100, scene=None, verbose=True, root_path="./"):
+def collect_data(set_name, dictionary, dataset_type = 'image', batch_size=20, time_thresh=48, dist_tresh=100, scene=None, verbose=True, root_path="./"):
 
 	assert set_name in ['train','val','test']
 
@@ -82,24 +82,8 @@ def collect_data(set_name, dataset_type = 'image', batch_size=20, time_thresh=48
 
 	current_size = 0
 	social_id = 0
-	part_file = '/{}.txt'.format('*' if scene == None else scene)
 
-	# for file in glob.glob(root_path + rel_path + part_file):
-	#for file in glob.glob("../../sort/output" + part_file):
-		#scene_name = file[len(root_path+rel_path)+1:-6] + file[-5]
-	data = np.loadtxt(fname="../../../sort/output/3D/tracking.txt", delimiter = ',')
-	data_by_id = {}
-	for d in data:
-		frame_id = int(d[0])
-		person_id = int(d[1])
-		x = d[2]
-		y = d[3]
-		#for frame_id, person_id, x, y in d:
-		if person_id ==batch_size:
-			if person_id not in data_by_id.keys():
-				data_by_id[person_id] = []
-			data_by_id[person_id].append([person_id, frame_id, x, y])
-
+	data_by_id = dictionary.copy()
 	all_data_dict = data_by_id.copy()
 	if verbose:
 		print("Total People: ", len(list(data_by_id.keys())))
@@ -141,23 +125,19 @@ def collect_data(set_name, dataset_type = 'image', batch_size=20, time_thresh=48
 	full_masks.append(mask_batch[0:len(current_batch),0:len(current_batch)])
 	return full_dataset, full_masks
 
-def generate_pooled_data(b_size, t_tresh, d_tresh, train=True, scene=None, verbose=True):
+def generate_pooled_data(b_size, t_tresh, d_tresh, dictionary, train=True, scene=None, verbose=True):
 	if train:
-		full_train, full_masks_train = collect_data("train", batch_size=b_size, time_thresh=t_tresh, dist_tresh=d_tresh, scene=scene, verbose=verbose)
+		full_train, full_masks_train = collect_data("train", dictionary, batch_size=b_size, time_thresh=t_tresh, dist_tresh=d_tresh, scene=scene, verbose=verbose)
 		train = [full_train, full_masks_train]
 		train_name = "../social_pool_data/train_{0}_{1}_{2}_{3}.pickle".format('all' if scene is None else scene[:-2] + scene[-1], b_size, t_tresh, d_tresh)
 		with open(train_name, 'wb') as f:
 			pickle.dump(train, f)
 
 	if not train:
-		full_test, full_masks_test = collect_data("test", batch_size=b_size, time_thresh=t_tresh, dist_tresh=d_tresh, scene=scene, verbose=verbose)
-		print("full_test", full_test)
-		print(dim(full_test))
-		if dim(full_test)[2] > 8:
-			test = [full_test, full_masks_test]
-			test_name = "../social_pool_data/test_{0}_{1}_{2}_{3}.pickle".format('all' if scene is None else scene[:-2] + scene[-1], b_size, t_tresh, d_tresh)# + str(b_size) + "_" + str(t_tresh) + "_" + str(d_tresh) + ".pickle"
-			with open(test_name, 'wb') as f:
-				pickle.dump(test, f)
+		full_test, full_masks_test = collect_data("test", dictionary, batch_size=b_size, time_thresh=t_tresh, dist_tresh=d_tresh, scene=scene, verbose=verbose)
+		test = [full_test, full_masks_test]
+		return test
+
 
 def initial_pos(traj_batches):
 	batches = []
@@ -185,13 +165,9 @@ def dim(a):
 
 class SocialDataset(data.Dataset):
 
-	def __init__(self, set_name="train", b_size=4096, t_tresh=60, d_tresh=50, scene=None, id=False, verbose=True):
+	def __init__(self, dictionary,set_name="train", b_size=4096, t_tresh=60, d_tresh=50, scene=None, id=False, verbose=True):
 		'Initialization'
-		load_name = "../social_pool_data/{0}_{1}{2}_{3}_{4}.pickle".format(set_name, 'all_' if scene is None else scene[:-2] + scene[-1] + '_', b_size, t_tresh, d_tresh)
-		print(load_name)
-		with open(load_name, 'rb') as f:
-			data = pickle.load(f)
-
+		data = generate_pooled_data(25, 0,25, dictionary, train=False, verbose=True)#, root_path="./")
 		traj, masks = data
 		traj_new = []
 		
@@ -238,12 +214,4 @@ class SocialDataset(data.Dataset):
 We've provided pickle files, but to generate new files for different datasets or thresholds, please use a command like so:
 Parameter1: batchsize, Parameter2: time_thresh, Param3: dist_thresh
 """
-
-data = np.loadtxt(fname="../../../sort/output/3D/tracking.txt", delimiter = ',')
-data_by_id = []
-for d in data:
-	person_id = int(d[1])
-	if person_id not in data_by_id:
-		data_by_id.append(person_id)
-for i in data_by_id:
-	generate_pooled_data(i,0,25, train=False, verbose=True)#, root_path="./")
+# pickle dataset 생성하는 함수 dictionary: 
