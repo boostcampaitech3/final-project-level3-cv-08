@@ -76,16 +76,16 @@ def test(test_dataset, model, best_of_n = 1):
 			predicted_future = np.concatenate((interpolated_future, best_guess_dest), axis = 1)
 			predicted_future = np.reshape(predicted_future, (-1, hyper_params["future_length"], 2))
 
-			return predicted_future / hyper_params["data_scale"]
-			'''img1 = np.asarray(io.imread("./result/image{0:06d}.png".format(fnum+hyper_params["past_length"]-1)))
-			x /= hyper_params["data_scale"]
-			pf = predicted_future / hyper_params["data_scale"]
-			for j in range(len(x)):
-				for k in range(8, 16,2):
-					cv2.circle(img1, (int(x[j][k]+origin[0]), int(x[j][k+1]+origin[1])), 1,(0,255,0), 5)
-				for k in range(12):
-					cv2.circle(img1, (int(pf[j][k][0]+origin[0]), int(pf[j][k][1]+origin[1])), 1,(0,0,255), 5)
-			cv2.imwrite('./result/image{0:06d}.png'.format(fnum+hyper_params["past_length"]-1), img1)'''
+		return predicted_future / hyper_params["data_scale"]
+		'''img1 = np.asarray(io.imread("./result/image{0:06d}.png".format(fnum+hyper_params["past_length"]-1)))
+		x /= hyper_params["data_scale"]
+		pf = predicted_future / hyper_params["data_scale"]
+		for j in range(len(x)):
+			for k in range(8, 16,2):
+				cv2.circle(img1, (int(x[j][k]+origin[0]), int(x[j][k+1]+origin[1])), 1,(0,255,0), 5)
+			for k in range(12):
+				cv2.circle(img1, (int(pf[j][k][0]+origin[0]), int(pf[j][k][1]+origin[1])), 1,(0,0,255), 5)
+		cv2.imwrite('./result/image{0:06d}.png'.format(fnum+hyper_params["past_length"]-1), img1)'''
 
 def main():
 	start = time.time()
