@@ -38,6 +38,26 @@ try:
 except ImportError:
     from mmdet3d.utils import compat_cfg
 
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+import sys
+from torch.utils.data import DataLoader
+import argparse
+import copy
+sys.path.append("/PECNet/utils/")
+import matplotlib.pyplot as plt
+import numpy as np
+from models import *
+from social_utils_add import *
+import yaml
+import cv2
+from skimage import io
+import glob
+import time
+
 ###########################################
 from lib.config import cfgs
 from lib.models import get_net
@@ -49,13 +69,14 @@ def parse_args():
     parser.add_argument('config', help='test config file path for 3D')
     parser.add_argument('checkpoint', help='checkpoint file for 3D')
     parser.add_argument('checkpoint_YOLOP', help='checkpoint file path for YOLOP')
+    parser.add_argument('--data-root', default='/opt/ml/kitti_testing_13/')
     parser.add_argument("--max_age", 
                         help="Maximum number of frames to keep alive a track without associated detections.", 
                         type=int, default=1)
     parser.add_argument("--min_hits", 
                         help="Minimum number of associated detections before track is initialised.", 
                         type=int, default=1)
-    parser.add_argument("--centerpoint_threshold", help="Minimum centerpoint for match.", type=float, default=2.0)
+    parser.add_argument("--centerpoint_threshold", help="Minimum centerpoint for match.", type=float, default=2.5)
     parser.add_argument('--out', help='output result file in pickle format')
     parser.add_argument(
         '--fuse-conv-bn',
@@ -131,6 +152,8 @@ def parse_args():
         default='none',
         help='job launcher')
     parser.add_argument('--local_rank', type=int, default=0)
+    parser.add_argument('--num_trajectories', '-nt', default=1)
+    parser.add_argument('--load_file', '-lf', default="PECNET_car_model.pt")
     args = parser.parse_args()
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
@@ -161,9 +184,11 @@ def main():
         raise ValueError('The output file must be a pkl file.')
 
     cfg = Config.fromfile(args.config)
+    cfg.data.test.data_root = args.data_root
+    cfg.data_root = args.data_root
+    
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
-    print('>>>>>>>>>>>>>> data root :', cfg.data_root)
     cfg = compat_cfg(cfg)
 
     # set multi-process settings
@@ -252,9 +277,26 @@ def main():
         model_2d.cpu()
     """
     """
+
+
+    """
+    >>>>>>>>>>>>>>>>>>>>>>> forecast
+    """
+    device = 'cuda' if torch.cuda.is_available else 'cpu'
+    checkpoint_forecast = torch.load('/opt/ml/final-project-level3-cv-08/mmdetection3d/tools/PECNet/saved_models/{}'.format(args.load_file), map_location=device)
+    hyper_params = checkpoint_forecast["hyper_params"]
+
+    model_forecast = PECNet(hyper_params["enc_past_size"], hyper_params["enc_dest_size"], hyper_params["enc_latent_size"], hyper_params["dec_size"], hyper_params["predictor_hidden_size"], hyper_params['non_local_theta_size'], hyper_params['non_local_phi_size'], hyper_params['non_local_g_size'], hyper_params["fdim"], hyper_params["zdim"], hyper_params["nonlocal_pools"], hyper_params['non_local_dim'], hyper_params["sigma"], hyper_params["past_length"], hyper_params["future_length"])
+    model_forecast = model_forecast.double().to(device)
+    model_forecast.load_state_dict(checkpoint_forecast["model_state_dict"])
+
+    """
+    """
+
+
     if not distributed:
         model = MMDataParallel(model, device_ids=cfg.gpu_ids)
-        outputs, bev_outputs = single_gpu_test(model, model_2d, data_loader, args, cfg)
+        outputs, bev_outputs = single_gpu_test(model, model_2d, model_forecast, hyper_params, data_loader, args, cfg)
         # bev_outputs : (N, 7) -> x, y, rot, h, w, score, cls_id
     else:
         model = MMDistributedDataParallel(

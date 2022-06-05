@@ -1,5 +1,6 @@
 from __future__ import print_function
-
+from __future__ import division
+import torch
 import time
 import math
 import os
@@ -17,6 +18,7 @@ import cv2
 from filterpy.kalman import KalmanFilter
 
 import torchvision.transforms as transforms
+import copy
 
 ######################################kalman filter를 위한 import
 from copy import deepcopy
@@ -683,6 +685,23 @@ def recursiveFindBestFit(bbox_edges, points_filtered, v2p_matrix, bbox_2d_check,
             break
     return final_shifted, bbox_edges, final_four_edges_2d
 
+def filterDetections(detections):
+    """
+    detections : (N, 9)
+    """
+    centerpoint_matrix = centerPointBatch(detections, detections)
+    for i in range(centerpoint_matrix.shape[0]):
+        centerpoint_matrix[i, i:] = 1
+    (idx_x, idx_y) = np.where(centerpoint_matrix < 0.1)
+    filtered_detections = []
+    for i, detection in enumerate(detections):
+        if i in idx_x:
+            continue
+        filtered_detections.append(detection)
+    
+    return np.array(filtered_detections)
+
+     
 class SortCustom(object):
     def __init__(self, v2p_matrix, iou_threshold, max_age=1, min_hits=3, centerpoint_threshold=0.35):
         """
@@ -717,6 +736,7 @@ class SortCustom(object):
         unmatched_dets    : match가 되지 않은 detections
         unmatched_trks    : match가 되지 않은 detections
         """
+        dets = filterDetections(dets)
         # get predicted locations from existing trackers.
         trks = np.zeros((len(self.trackers), 6))
         trks_total_coordinate = np.zeros((len(self.trackers), 7))
@@ -732,7 +752,6 @@ class SortCustom(object):
         for t in reversed(to_del):
             self.trackers.pop(t)
         matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(dets, trks, self.centerpoint_threshold)
-
         """
         detection과 tracking이 match가 안 된 이유 가능성 크게 3 종류
             1. detection이 되지 않아 tracking과 matching이 안됐다. 
@@ -748,7 +767,7 @@ class SortCustom(object):
         1-2번 가능성을 해결하기 위해서 unmatched 2D와 unmatched tracking matching
         """
         # find unmatched 2D
-        edge_bbox_3d = center2Edge(bbox_3d=dets)
+        edge_bbox_3d = center2Edge(bbox_3d=dets) # N, 3, 8
         dets_pixel_3d = toPixelCoord(bbox_3d=edge_bbox_3d, v2p_matrix=self.v2p_matrix)
         matches_2d3d, unmatched_indices_2d, unmatched_indices_3d, _ = match2D3D(dets_pixel_2d, dets_pixel_3d, self.iou_threshold)
 
@@ -781,10 +800,11 @@ class SortCustom(object):
         for i in unmatched_dets:
             trk = KalmanBoxTracker(dets[i,:])
             self.trackers.append(trk)
+
         i = len(self.trackers)
         for trk in reversed(self.trackers):
             d, cls_id, cls_score, updated_coord = trk.get_state()
-            if (trk.time_since_update < 2) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits):
+            if (trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits):
                 ret.append(np.concatenate((d,[trk.id+1], [cls_id], [cls_score], updated_coord)).reshape(1,-1)) # +1 as MOT benchmark requires positive
             i -= 1
             # remove dead tracklet
@@ -796,12 +816,182 @@ class SortCustom(object):
 
 ############################################################################################################################################
 
+def correctCoord(src_info, dst_info, dst_bbox_x, dst_bbox_y):
+    """
+    src info를 기준으로 dst_info에서 내 차량의 움직임을 제거한 bbox좌표 반환 (북쪽이 위쪽 방향)
+
+    src info        : 내 차량의 기준 utm_x, utm_y, yaw (해당 id의 첫번째 인식된 객체 frame)
+    dst_info        : 내 차량의 현재 utm_x, utm_y, yaw
+    dst_bbox        : 보정할 bbox 좌표 x, y
+    """
+    src_utm = src_info[:2]
+
+    dst_yaw = dst_info[2] - np.pi/2
+    dst_utm = dst_info[:2]
+
+    dst_rotation_mat = np.array([[np.cos(dst_yaw), -np.sin(dst_yaw)],
+                            [np.sin(dst_yaw), np.cos(dst_yaw)]])
+
+    dst_bbox_rot = np.array([dst_bbox_x, dst_bbox_y]).reshape(1, 2)@dst_rotation_mat.T # (1, 2)
+    ego_moving = dst_utm[::-1] - src_utm[::-1] # (1, 2)
+
+    corrected_bbox = dst_bbox_rot + ego_moving # (1, 2)
+
+    return corrected_bbox[0][0], corrected_bbox[0][1]
+
+def makeForecastDict(trackers, forecast_dict, prev_updated_ids, prev_forecast, predicted_updated_ids, oxt_dict, frame):
+    """
+    예측을 위한 dictionary를 만드는 함수
+
+    trackers            : 현재 tracking된 객체 정보
+    forecast_dict       : 예측을 위한 dictionary
+    prev_updated_ids    : 이전 frame에서 예측에 사용된 ids
+    prev_forecast       : 이전 frame에서 예측한 값들
+    frame               : 현재 frame 번호
+
+    return
+    forecast_dict       : update된 예측을 위한 dictionary
+    total_updated_ids   : 예측을 위해서 현재 tracking된 객체 ids와 현재는 tracking되지 않았지만, 이전 frame에서 예측한 ids
+    predicted_updated_ids : 예측을 통해서 업데이트된 tracking ids
+    """
+    # tracking된 객체의 좌표 update
+    cur_updated_ids = []
+    #trackers_bev = center2ImageBev(trackers)
+    
+    for tracker in trackers:
+        x,y = tracker[0], tracker[1]
+        tracking_id = tracker[5]
+        if tracking_id in forecast_dict.keys():
+            src_frame = forecast_dict[tracking_id][0][1]
+            corrected_x, corrected_y = correctCoord(oxt_dict[src_frame], oxt_dict[frame], x, y)
+            forecast_dict[tracking_id] = np.append(forecast_dict[tracking_id], np.array([[tracking_id, frame, corrected_x, corrected_y]]), axis=0)
+        else:
+            corrected_x, corrected_y = correctCoord(oxt_dict[frame], oxt_dict[frame], x, y)
+            forecast_dict[tracking_id] = np.array([[tracking_id, frame, corrected_x, corrected_y]])
+        cur_updated_ids.append(tracking_id)
+    
+    total_updated_ids = copy.deepcopy(cur_updated_ids) 
+    # 현재는 tracking 안됐지만, 이전에 예측된 값이라면 예측된 값으로 현재 frame 좌표를 채운다. 
+    new_predicted_updated_ids = []
+    for i, prev_id in enumerate(prev_updated_ids):
+        if (prev_id not in cur_updated_ids) and (prev_id not in predicted_updated_ids):
+            forecast_dict[prev_id] = np.append(forecast_dict[prev_id], np.array([[prev_id, frame, prev_forecast[i][0][0], prev_forecast[i][0][1]]]), axis=0)
+            total_updated_ids.append(prev_id)
+            new_predicted_updated_ids.append(prev_id)
+
+    return forecast_dict, total_updated_ids, new_predicted_updated_ids
 
 
+def filterUpdatedIds(forecast_dict, total_updated_ids):
+    """
+    update된 id 중에서 전체 길이가 8이상인 id만 filtering
+
+    forecast_dict        : 예측을 위한 dictionary
+    total_updated_ids    : update된 ids
+
+    return
+    filtered_updated_ids : 길이가 8이상인 ids
+    """
+    filtered_updated_ids = []
+    filtered_forecast_dict = {}
+    for id in total_updated_ids:
+        if forecast_dict[id].shape[0] >= 8:
+            filtered_updated_ids.append(id)
+            filtered_forecast_dict[id] = forecast_dict[id][-8:]
+
+    return filtered_updated_ids, filtered_forecast_dict
 
 
+def recoverCoord(src_info, dst_info, points):
+    """
+    src info를 기준으로 dst_info에서 내 차량의 움직임을 제거한 bbox좌표 반환 (북쪽이 위쪽 방향)
+
+    src info        : 내 차량의 기준 utm_x, utm_y, yaw (해당 id의 첫번째 인식된 객체 frame)
+    dst_info        : 내 차량의 현재 utm_x, utm_y, yaw
+    points          : 보정할 bbox 좌표 x, y (12, 2)
+    """
+    src_utm = src_info[:2]
+
+    dst_yaw = np.pi/2 - dst_info[2]
+    dst_utm = dst_info[:2]
+
+    dst_rotation_mat = np.array([[np.cos(dst_yaw), -np.sin(dst_yaw)],
+                            [np.sin(dst_yaw), np.cos(dst_yaw)]])
+
+    ego_moving = dst_utm[::-1] - src_utm[::-1] # (1, 2)
+
+    corrected_bbox = points - ego_moving # (12, 2)
+    corrected_bbox = corrected_bbox@dst_rotation_mat.T  # (12, 2)
+    
+    return corrected_bbox
 
 
+def addEgoMoving(forecast_dict, filtered_updated_ids, pf, oxt_dict):
+    """
+    bev로 그리기 위해서 좌표를 복원하는 과정
+
+    pf      : 예측한 12프레임의 좌표 (N, 12, 2)
+    """
+    recovered_points_total = []
+    for i, point_forecast in enumerate(pf):
+        id = filtered_updated_ids[i]
+        src_frame = forecast_dict[id][0][1]
+        cur_frame = forecast_dict[id][-1][1]
+        src_info = oxt_dict[src_frame]
+        dst_info = oxt_dict[cur_frame]
+        recovered_points = recoverCoord(src_info, dst_info, point_forecast) # (12, 2)
+        recovered_points = center2ImageBev(recovered_points)
+        recovered_points_total.append(recovered_points)
+
+    recovered_points_total = np.array(recovered_points_total) # (N, 12, 2)
+    return recovered_points_total
+
+def forecastTest(test_dataset, model, device, hyper_params, density_image, recovery, forecast_dict, filtered_updated_ids,oxt_dict, best_of_n = 1):
+    model.eval()
+    assert best_of_n >= 1 and type(best_of_n) == int
+    test_loss = 0
+    with torch.no_grad():
+        
+        for i, (traj, mask, initial_pos) in enumerate(zip(test_dataset.trajectory_batches, test_dataset.mask_batches, test_dataset.initial_pos_batches)):
+            traj, mask, initial_pos = torch.DoubleTensor(traj).to(device), torch.DoubleTensor(mask).to(device), torch.DoubleTensor(initial_pos).to(device)
+            #x = traj[:, num:num+hyper_params["past_length"], :]
+            # reshape the data
+            x = traj[:, :hyper_params["past_length"], :]
+            x = x.contiguous().view(-1, x.shape[1]*x.shape[2])
+            x = x.to(device)
+
+            for index in range(best_of_n):
+                dest_recon = model.forward(x, initial_pos, device=device)
+                dest_recon = dest_recon.cpu().numpy()
+
+            best_guess_dest = dest_recon
+
+            # back to torch land
+            best_guess_dest = torch.DoubleTensor(best_guess_dest).to(device)
+
+            # using the best guess for interpolation
+            interpolated_future = model.predict(x, best_guess_dest, mask, initial_pos)
+            interpolated_future = interpolated_future.cpu().numpy()
+            best_guess_dest = best_guess_dest.cpu().numpy()
+            
+            # final overall prediction
+            predicted_future = np.concatenate((interpolated_future, best_guess_dest), axis = 1)
+            predicted_future = np.reshape(predicted_future, (-1, hyper_params["future_length"], 2))
+            x /= (hyper_params["data_scale"]*10)
+            x = np.array(x.detach().cpu()) + recovery.squeeze(1).repeat(8, axis=0).reshape(-1, 16)
+            pf = predicted_future / (hyper_params["data_scale"]*10)
+            pf += recovery[:, :1, :]
+
+            recovered_x = addEgoMoving(forecast_dict, filtered_updated_ids, x.reshape(-1, hyper_params["past_length"], 2), oxt_dict) 
+            recovered_pfs = addEgoMoving(forecast_dict, filtered_updated_ids, pf, oxt_dict)
+
+            for j in range(len(x)):
+                for k in range(8):
+                    cv2.circle(density_image, (int(recovered_x[j][k][1]), int(recovered_x[j][k][0])), 1,(0,255,0), 5)
+                for k in range(10):
+                    cv2.circle(density_image, (int(recovered_pfs[j][k][1]), int(recovered_pfs[j][k][0])), 1,(0,0,255), 3)
+        
+        return pf, density_image
 
 
 
@@ -1218,6 +1408,29 @@ def lidar2Bev(velodyne_path):
 
     return top, density_image, lidar
 
+def center2ImageBev(trackers):
+    xy = trackers[:, :2]
+
+    v = 0.1
+    xrange = (0, 70.4)
+    yrange = (-40, 40)
+
+    xy_range = np.array([xrange[0], yrange[0]]).reshape(-1, 2)
+
+    W = math.ceil((xrange[1] - xrange[0]) / v)
+    H = math.ceil((yrange[1] - yrange[0]) / v)
+    X0, Xn = 0, W
+    Y0, Yn = 0, H
+    width = Yn - Y0
+    height  = Xn - X0
+
+    wh_range = np.array([height, width]).reshape(-1, 2)
+
+    trackers_bev = wh_range - (xy - xy_range)/v
+    
+    return trackers_bev    
+
+
 def bevPoints(trackers):
     xy = trackers[:, :2]
     rotation_y_lidar = trackers[:, 2]
@@ -1298,8 +1511,9 @@ def drawBbox(box3d, trackers, rotated_points_detections, density_image, frame, t
         img_2d = cv2.polylines(img_2d, [points], True, color, thickness=2)
         img_2d = cv2.line(img_2d, ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), color = color, thickness=4)
         print('%d, %d, %d, %d, %d'%(frame, ids[i], (points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2, labels[i]), file=tracking_file)
-        cv2.putText(img_2d, classes[labels[i]]+str(ids[i])+' : ' + str(scores[i])[:4], (x_max, y_max), 0, 0.7, color, thickness=1, lineType=cv2.LINE_AA)
-        cv2.putText(img_2d, 'frame : ' + str(frame), (5, 30), 0, 0.7, color, thickness=1, lineType=cv2.LINE_AA)
+        # cv2.putText(img_2d, classes[labels[i]]+str(ids[i])+' : ' + str(scores[i])[:4], (x_max, y_max), 0, 0.7, color, thickness=1, lineType=cv2.LINE_AA)
+        cv2.putText(img_2d, str(ids[i]), (x_max, y_max), 0, 0.7, color, thickness=2, lineType=cv2.LINE_AA)
+        cv2.putText(img_2d, 'frame : ' + str(frame), (5, 30), 0, 0.7, color, thickness=2, lineType=cv2.LINE_AA)
     
     
     return img_2d
@@ -1319,3 +1533,325 @@ transform=transforms.Compose([
 def transformImg(img):
     return transform(img)
     
+
+
+
+class OutOfRangeError(ValueError):
+    pass
+
+
+__all__ = ['to_latlon', 'from_latlon']
+
+K0 = 0.9996
+
+E = 0.00669438
+E2 = E * E
+E3 = E2 * E
+E_P2 = E / (1 - E)
+
+SQRT_E = np.sqrt(1 - E)
+_E = (1 - SQRT_E) / (1 + SQRT_E)
+_E2 = _E * _E
+_E3 = _E2 * _E
+_E4 = _E3 * _E
+_E5 = _E4 * _E
+
+M1 = (1 - E / 4 - 3 * E2 / 64 - 5 * E3 / 256)
+M2 = (3 * E / 8 + 3 * E2 / 32 + 45 * E3 / 1024)
+M3 = (15 * E2 / 256 + 45 * E3 / 1024)
+M4 = (35 * E3 / 3072)
+
+P2 = (3 / 2 * _E - 27 / 32 * _E3 + 269 / 512 * _E5)
+P3 = (21 / 16 * _E2 - 55 / 32 * _E4)
+P4 = (151 / 96 * _E3 - 417 / 128 * _E5)
+P5 = (1097 / 512 * _E4)
+
+R = 6378137
+
+ZONE_LETTERS = "CDEFGHJKLMNPQRSTUVWXX"
+
+
+def in_bounds(x, lower, upper, upper_strict=False):
+    if upper_strict and True:
+        return lower <= np.min(x) and np.max(x) < upper
+    elif upper_strict and not True:
+        return lower <= x < upper
+    elif True:
+        return lower <= np.min(x) and np.max(x) <= upper
+    return lower <= x <= upper
+
+
+def check_valid_zone(zone_number, zone_letter):
+    if not 1 <= zone_number <= 60:
+        raise OutOfRangeError('zone number out of range (must be between 1 and 60)')
+
+    if zone_letter:
+        zone_letter = zone_letter.upper()
+
+        if not 'C' <= zone_letter <= 'X' or zone_letter in ['I', 'O']:
+            raise OutOfRangeError('zone letter out of range (must be between C and X)')
+
+
+def mixed_signs(x):
+    return True and np.min(x) < 0 and np.max(x) >= 0
+
+
+def negative(x):
+    if True:
+        return np.max(x) < 0
+    return x < 0
+
+
+def mod_angle(value):
+    """Returns angle in radians to be between -pi and pi"""
+    return (value + np.pi) % (2 * np.pi) - np.pi
+
+
+def to_latlon(easting, northing, zone_number, zone_letter=None, northern=None, strict=True):
+    """This function converts UTM coordinates to Latitude and Longitude
+
+        Parameters
+        ----------
+        easting: int or NumPy array
+            Easting value of UTM coordinates
+
+        northing: int or NumPy array
+            Northing value of UTM coordinates
+
+        zone_number: int
+            Zone number is represented with global map numbers of a UTM zone
+            numbers map. For more information see utmzones [1]_
+
+        zone_letter: str
+            Zone letter can be represented as string values.  UTM zone
+            designators can be seen in [1]_
+
+        northern: bool
+            You can set True or False to set this parameter. Default is None
+
+        strict: bool
+            Raise an OutOfRangeError if outside of bounds
+
+        Returns
+        -------
+        latitude: float or NumPy array
+            Latitude between 80 deg S and 84 deg N, e.g. (-80.0 to 84.0)
+
+        longitude: float or NumPy array
+            Longitude between 180 deg W and 180 deg E, e.g. (-180.0 to 180.0).
+
+
+       .. _[1]: http://www.jaworski.ca/utmzones.htm
+
+    """
+    if not zone_letter and northern is None:
+        raise ValueError('either zone_letter or northern needs to be set')
+
+    elif zone_letter and northern is not None:
+        raise ValueError('set either zone_letter or northern, but not both')
+
+    if strict:
+        if not in_bounds(easting, 100000, 1000000, upper_strict=True):
+            raise OutOfRangeError('easting out of range (must be between 100,000 m and 999,999 m)')
+        if not in_bounds(northing, 0, 10000000):
+            raise OutOfRangeError('northing out of range (must be between 0 m and 10,000,000 m)')
+    
+    check_valid_zone(zone_number, zone_letter)
+    
+    if zone_letter:
+        zone_letter = zone_letter.upper()
+        northern = (zone_letter >= 'N')
+
+    x = easting - 500000
+    y = northing
+
+    if not northern:
+        y -= 10000000
+
+    m = y / K0
+    mu = m / (R * M1)
+
+    p_rad = (mu +
+             P2 * np.sin(2 * mu) +
+             P3 * np.sin(4 * mu) +
+             P4 * np.sin(6 * mu) +
+             P5 * np.sin(8 * mu))
+
+    p_sin = np.sin(p_rad)
+    p_sin2 = p_sin * p_sin
+
+    p_cos = np.cos(p_rad)
+
+    p_tan = p_sin / p_cos
+    p_tan2 = p_tan * p_tan
+    p_tan4 = p_tan2 * p_tan2
+
+    ep_sin = 1 - E * p_sin2
+    ep_sin_sqrt = np.sqrt(1 - E * p_sin2)
+
+    n = R / ep_sin_sqrt
+    r = (1 - E) / ep_sin
+
+    c = E_P2 * p_cos**2
+    c2 = c * c
+
+    d = x / (n * K0)
+    d2 = d * d
+    d3 = d2 * d
+    d4 = d3 * d
+    d5 = d4 * d
+    d6 = d5 * d
+
+    latitude = (p_rad - (p_tan / r) *
+                (d2 / 2 -
+                 d4 / 24 * (5 + 3 * p_tan2 + 10 * c - 4 * c2 - 9 * E_P2)) +
+                 d6 / 720 * (61 + 90 * p_tan2 + 298 * c + 45 * p_tan4 - 252 * E_P2 - 3 * c2))
+
+    longitude = (d -
+                 d3 / 6 * (1 + 2 * p_tan2 + c) +
+                 d5 / 120 * (5 - 2 * c + 28 * p_tan2 - 3 * c2 + 8 * E_P2 + 24 * p_tan4)) / p_cos
+
+    longitude = mod_angle(longitude + np.radians(zone_number_to_central_longitude(zone_number)))
+
+    return (np.degrees(latitude),
+            np.degrees(longitude))
+
+
+def from_latlon(latitude, longitude, force_zone_number=None, force_zone_letter=None):
+    """This function converts Latitude and Longitude to UTM coordinate
+
+        Parameters
+        ----------
+        latitude: float or NumPy array
+            Latitude between 80 deg S and 84 deg N, e.g. (-80.0 to 84.0)
+
+        longitude: float or NumPy array
+            Longitude between 180 deg W and 180 deg E, e.g. (-180.0 to 180.0).
+
+        force_zone_number: int
+            Zone number is represented by global map numbers of an UTM zone
+            numbers map. You may force conversion to be included within one
+            UTM zone number.  For more information see utmzones [1]_
+
+        force_zone_letter: str
+            You may force conversion to be included within one UTM zone
+            letter.  For more information see utmzones [1]_
+
+        Returns
+        -------
+        easting: float or NumPy array
+            Easting value of UTM coordinates
+
+        northing: float or NumPy array
+            Northing value of UTM coordinates
+
+        zone_number: int
+            Zone number is represented by global map numbers of a UTM zone
+            numbers map. More information see utmzones [1]_
+
+        zone_letter: str
+            Zone letter is represented by a string value. UTM zone designators
+            can be accessed in [1]_
+
+
+       .. _[1]: http://www.jaworski.ca/utmzones.htm
+    """
+    if not in_bounds(latitude, -80, 84):
+        raise OutOfRangeError('latitude out of range (must be between 80 deg S and 84 deg N)')
+    if not in_bounds(longitude, -180, 180):
+        raise OutOfRangeError('longitude out of range (must be between 180 deg W and 180 deg E)')
+    if force_zone_number is not None:
+        check_valid_zone(force_zone_number, force_zone_letter)
+
+    lat_rad = np.radians(latitude)
+    lat_sin = np.sin(lat_rad)
+    lat_cos = np.cos(lat_rad)
+
+    lat_tan = lat_sin / lat_cos
+    lat_tan2 = lat_tan * lat_tan
+    lat_tan4 = lat_tan2 * lat_tan2
+
+    if force_zone_number is None:
+        zone_number = latlon_to_zone_number(latitude, longitude)
+    else:
+        zone_number = force_zone_number
+
+    if force_zone_letter is None:
+        zone_letter = latitude_to_zone_letter(latitude)
+    else:
+        zone_letter = force_zone_letter
+
+    lon_rad = np.radians(longitude)
+    central_lon = zone_number_to_central_longitude(zone_number)
+    central_lon_rad = np.radians(central_lon)
+
+    n = R / np.sqrt(1 - E * lat_sin**2)
+    c = E_P2 * lat_cos**2
+
+    a = lat_cos * mod_angle(lon_rad - central_lon_rad)
+    a2 = a * a
+    a3 = a2 * a
+    a4 = a3 * a
+    a5 = a4 * a
+    a6 = a5 * a
+
+    m = R * (M1 * lat_rad -
+             M2 * np.sin(2 * lat_rad) +
+             M3 * np.sin(4 * lat_rad) -
+             M4 * np.sin(6 * lat_rad))
+
+    easting = K0 * n * (a +
+                        a3 / 6 * (1 - lat_tan2 + c) +
+                        a5 / 120 * (5 - 18 * lat_tan2 + lat_tan4 + 72 * c - 58 * E_P2)) + 500000
+
+    northing = K0 * (m + n * lat_tan * (a2 / 2 +
+                                        a4 / 24 * (5 - lat_tan2 + 9 * c + 4 * c**2) +
+                                        a6 / 720 * (61 - 58 * lat_tan2 + lat_tan4 + 600 * c - 330 * E_P2)))
+
+    if mixed_signs(latitude):
+        raise ValueError("latitudes must all have the same sign")
+    elif negative(latitude):
+        northing += 10000000
+
+    return easting, northing, zone_number, zone_letter
+
+
+def latitude_to_zone_letter(latitude):
+    # If the input is a numpy array, just use the first element
+    # User responsibility to make sure that all points are in one zone
+    if True and isinstance(latitude, np.ndarray):
+        latitude = latitude.flat[0]
+
+    if -80 <= latitude <= 84:
+        return ZONE_LETTERS[int(latitude + 80) >> 3]
+    else:
+        return None
+
+
+def latlon_to_zone_number(latitude, longitude):
+    # If the input is a numpy array, just use the first element
+    # User responsibility to make sure that all points are in one zone
+    if True:
+        if isinstance(latitude, np.ndarray):
+            latitude = latitude.flat[0]
+        if isinstance(longitude, np.ndarray):
+            longitude = longitude.flat[0]
+
+    if 56 <= latitude < 64 and 3 <= longitude < 12:
+        return 32
+
+    if 72 <= latitude <= 84 and longitude >= 0:
+        if longitude < 9:
+            return 31
+        elif longitude < 21:
+            return 33
+        elif longitude < 33:
+            return 35
+        elif longitude < 42:
+            return 37
+
+    return int((longitude + 180) / 6) + 1
+
+
+def zone_number_to_central_longitude(zone_number):
+    return (zone_number - 1) * 6 - 180 + 3
