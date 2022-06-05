@@ -113,7 +113,7 @@ def single_gpu_test(model,
             inf_out, _ = det_out
             det_pred = non_max_suppression(inf_out, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False)
             det=det_pred[0]
-            
+            print(det)
             # 원래 사이즈로 bbox 복원
             bbox_2d = np.array(det[det[:, 5]<=2].detach().cpu())*np.array([1242/640, 375/384, 1242/640, 375/384, 1, 1])
 
@@ -207,7 +207,7 @@ def single_gpu_test(model,
             forecast start
             """
             
-            print(forecast_dict[1])
+            # print(forecast_dict[1])
             if len(filtered_forecast_dict)!=0:
                 forecast_test_dataset = SocialDataset(filtered_forecast_dict, set_name="test", b_size=25, t_tresh=0, d_tresh=25, verbose=True)
 

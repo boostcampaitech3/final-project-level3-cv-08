@@ -314,4 +314,6 @@ def main():
 
 
 if __name__ == '__main__':
+    print()
+    print(sys.path)
     main()

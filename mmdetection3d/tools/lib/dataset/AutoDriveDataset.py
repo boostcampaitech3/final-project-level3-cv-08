@@ -104,10 +104,6 @@ class AutoDriveDataset(Dataset):
         else:
             seg_label = cv2.imread(data["mask"], 0)
         lane_label = cv2.imread(data["lane"], 0)
-        #print(lane_label.shape)
-        # print(seg_label.shape)
-        # print(lane_label.shape)
-        # print(seg_label.shape)
         resized_shape = self.inputsize
         if isinstance(resized_shape, list):
             resized_shape = max(resized_shape)
@@ -117,7 +113,7 @@ class AutoDriveDataset(Dataset):
             interp = cv2.INTER_AREA if r < 1 else cv2.INTER_LINEAR
             img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
             seg_label = cv2.resize(seg_label, (int(w0 * r), int(h0 * r)), interpolation=interp)
-            lane_label = cv2.resize(lane_label, (int(w0 * r), int(h0 * r)), interpolation=interp)
+            lane_label = cv2.resize(lane_label, (int(w0 * r), int(h0 * r)), interpolation=cv2.INTER_NEAREST)
         h, w = img.shape[:2]
         
         (img, seg_label, lane_label), ratio, pad = letterbox((img, seg_label, lane_label), resized_shape, auto=True, scaleup=self.is_train)
@@ -204,9 +200,44 @@ class AutoDriveDataset(Dataset):
         else:
             _,seg1 = cv2.threshold(seg_label,1,255,cv2.THRESH_BINARY)
             _,seg2 = cv2.threshold(seg_label,1,255,cv2.THRESH_BINARY_INV)
+
         _,lane1 = cv2.threshold(lane_label,1,255,cv2.THRESH_BINARY)
         _,lane2 = cv2.threshold(lane_label,1,255,cv2.THRESH_BINARY_INV)
-#        _,seg2 = cv2.threshold(seg_label[:,:,2],1,255,cv2.THRESH_BINARY)
+        
+
+        """lane0 = lane_label.copy()
+        lane1 = lane_label.copy()
+        lane2 = lane_label.copy()
+        lane3 = lane_label.copy()
+        lane4 = lane_label.copy()
+
+
+        lane0[lane_label==0] = 255
+        lane0[lane_label!=0] = 0
+        
+        #crosswalk
+        lane1[lane_label==75] = 255
+        lane1[lane_label!=75] = 0
+        #lane1[lane_label>128] = 0
+        
+        #yellow
+        lane2[lane_label==128] = 255
+        lane2[lane_label!=128] = 0
+        #lane2[lane_label>191] = 0
+    
+        # curb
+        lane3[lane_label==179] = 255
+        lane3[lane_label!=179] = 0
+
+        # white
+        lane4[lane_label==255] = 255
+        lane4[lane_label!=255] = 0
+        
+        test = lane0[lane0!=0]
+        if len(test)!=0:
+            print(test)
+"""
+        #_,seg2 = cv2.threshold(seg_label[:,:,2],1,255,cv2.THRESH_BINARY)
         # # seg1[cutout_mask] = 0
         # # seg2[cutout_mask] = 0
         
@@ -218,8 +249,11 @@ class AutoDriveDataset(Dataset):
         seg2 = self.Tensor(seg2)
         # seg1 = self.Tensor(seg1)
         # seg2 = self.Tensor(seg2)
+        #lane0 = self.Tensor(lane0)
         lane1 = self.Tensor(lane1)
         lane2 = self.Tensor(lane2)
+        #lane3 = self.Tensor(lane3)
+        #lane4 = self.Tensor(lane4)
 
         # seg_label = torch.stack((seg2[0], seg1[0]),0)
         if self.cfg.num_seg_class == 3:
@@ -228,6 +262,11 @@ class AutoDriveDataset(Dataset):
             seg_label = torch.stack((seg2[0], seg1[0]),0)
             
         lane_label = torch.stack((lane2[0], lane1[0]),0)
+        #print(lane_label.shape)
+        #print("from dataset", max(np.array(lane_label[1]).flatten()))
+
+        #for i in lane0[0]:
+        #    print(i)
         # _, gt_mask = torch.max(seg_label, 0)
         # _ = show_seg_result(img, gt_mask, idx, 0, save_dir='debug', is_gt=True)
         
