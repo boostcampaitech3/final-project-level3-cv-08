@@ -179,7 +179,7 @@ def single_gpu_test(model,
             rotated_points_detections = bevPoints(total_det[:, [0, 1, 6, 3, 4]])
 
             # draw bbox on bev lidar points
-            density_image = drawBbox(rotated_points, trackers, rotated_points_detections, density_image, i, tracking_file)
+            # density_image, density_image_detect = drawBbox(rotated_points, trackers, rotated_points_detections, density_image, i, tracking_file)
 
             """
             """
@@ -213,11 +213,13 @@ def single_gpu_test(model,
                 for traj in forecast_test_dataset.trajectory_batches:
                     recovery = copy.deepcopy(traj[:, :1, :])
                     traj -= traj[:, :1, :]
+                    
                     traj *= (hyper_params["data_scale"]*10)
-
                 device = 'cuda'
                 prev_forecast, density_image = forecastTest(forecast_test_dataset, model_forecast, device, hyper_params, density_image, recovery, forecast_dict, filtered_updated_ids,oxt_dict,best_of_n = 1)
+                
             cv2.imwrite(f'/opt/ml/images/3D_recursive_sort/image{i:06d}.png', density_image)
+            # cv2.imwrite(f'/opt/ml/images/3D_recursive_sort_detect/image{i:06d}.png', density_image_detect)
             results.extend(result)
             bev_results.extend(total_det)
             batch_size = len(result)

@@ -804,7 +804,7 @@ class SortCustom(object):
         i = len(self.trackers)
         for trk in reversed(self.trackers):
             d, cls_id, cls_score, updated_coord = trk.get_state()
-            if (trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits):
+            if (trk.time_since_update < 2) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits):
                 ret.append(np.concatenate((d,[trk.id+1], [cls_id], [cls_score], updated_coord)).reshape(1,-1)) # +1 as MOT benchmark requires positive
             i -= 1
             # remove dead tracklet
@@ -980,7 +980,7 @@ def forecastTest(test_dataset, model, device, hyper_params, density_image, recov
             x /= (hyper_params["data_scale"]*10)
             x = np.array(x.detach().cpu()) + recovery.squeeze(1).repeat(8, axis=0).reshape(-1, 16)
             pf = predicted_future / (hyper_params["data_scale"]*10)
-            pf += recovery[:, :1, :]
+            pf += recovery
 
             recovered_x = addEgoMoving(forecast_dict, filtered_updated_ids, x.reshape(-1, hyper_params["past_length"], 2), oxt_dict) 
             recovered_pfs = addEgoMoving(forecast_dict, filtered_updated_ids, pf, oxt_dict)
@@ -988,8 +988,8 @@ def forecastTest(test_dataset, model, device, hyper_params, density_image, recov
             for j in range(len(x)):
                 for k in range(8):
                     cv2.circle(density_image, (int(recovered_x[j][k][1]), int(recovered_x[j][k][0])), 1,(0,255,0), 5)
-                for k in range(10):
-                    cv2.circle(density_image, (int(recovered_pfs[j][k][1]), int(recovered_pfs[j][k][0])), 1,(0,0,255), 3)
+                for k in range(8):
+                    cv2.circle(density_image, (int(recovered_pfs[j][k][1]), int(recovered_pfs[j][k][0])), 1,(0,0,255), 5)
         
         return pf, density_image
 
@@ -1488,14 +1488,15 @@ def drawBbox(box3d, trackers, rotated_points_detections, density_image, frame, t
     
 
     # ground truth of detections
+    img_2d_detect = copy.deepcopy(img_2d)
     for i in range(rotated_points_detections.shape[0]):
         color = (255, 0, 0)
         points = rotated_points_detections[i].reshape(-1, 2)
         points = points[:, ::-1]
         x_max = points[:,0].max()
         y_max = points[:,1].max()
-        img_2d = cv2.polylines(img_2d, [points], True, color, thickness=3)
-        img_2d = cv2.line(img_2d, ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), color = color, thickness=5)
+        img_2d_detect = cv2.polylines(img_2d_detect, [points], True, color, thickness=3)
+        img_2d_detect = cv2.line(img_2d_detect, ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), color = color, thickness=5)
         # print('%d, %d, %d, %d, %d'%(frame, ids[i], (points[0b][0]+points[2][0])//2, (points[0][1]+points[2][1])//2, labels[i]), file=tracking_file)
         # cv2.putText(img_2d, classes[labels[i]]+str(ids[i])+' : ' + str(scores[i])[:4], (x_max, y_max), 0, 0.7, color, thickness=1, lineType=cv2.LINE_AA)
         # cv2.putText(img_2d, 'frame : ' + str(frame), (5, 30), 0, 0.7, color, thickness=1, lineType=cv2.LINE_AA)
@@ -1506,17 +1507,17 @@ def drawBbox(box3d, trackers, rotated_points_detections, density_image, frame, t
         color = compute_color_for_id(ids[i])
         points = box3d[i].reshape(-1, 2)
         points = points[:, ::-1]
-        x_max = points[:,0].max()
-        y_max = points[:,1].max()
+        x_min = points[:,0].min()
+        y_min = points[:,1].min()
         img_2d = cv2.polylines(img_2d, [points], True, color, thickness=2)
         img_2d = cv2.line(img_2d, ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), ((points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2), color = color, thickness=4)
         print('%d, %d, %d, %d, %d'%(frame, ids[i], (points[0][0]+points[2][0])//2, (points[0][1]+points[2][1])//2, labels[i]), file=tracking_file)
         # cv2.putText(img_2d, classes[labels[i]]+str(ids[i])+' : ' + str(scores[i])[:4], (x_max, y_max), 0, 0.7, color, thickness=1, lineType=cv2.LINE_AA)
-        cv2.putText(img_2d, str(ids[i]), (x_max, y_max), 0, 0.7, color, thickness=2, lineType=cv2.LINE_AA)
+        cv2.putText(img_2d, str(ids[i]), (x_min, y_min), 0, 1, color, thickness=2, lineType=cv2.LINE_AA)
         cv2.putText(img_2d, 'frame : ' + str(frame), (5, 30), 0, 0.7, color, thickness=2, lineType=cv2.LINE_AA)
     
     
-    return img_2d
+    return img_2d, img_2d_detect
 
 
 ######for YOLOP
