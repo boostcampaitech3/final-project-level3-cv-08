@@ -113,7 +113,6 @@ def single_gpu_test(model,
             inf_out, _ = det_out
             det_pred = non_max_suppression(inf_out, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False)
             det=det_pred[0]
-            print(det)
             # 원래 사이즈로 bbox 복원
             bbox_2d = np.array(det[det[:, 5]<=2].detach().cpu())*np.array([1242/640, 375/384, 1242/640, 375/384, 1, 1])
 
@@ -125,7 +124,6 @@ def single_gpu_test(model,
 
             _, ll_seg_out = torch.max(ll_seg_out, 1)
             ll_seg_out = ll_seg_out.int().squeeze().cpu().numpy()
-            
 
             img_det = show_seg_result(img_det, (da_seg_out, ll_seg_out), _, _, is_demo=True)
             if len(det):
