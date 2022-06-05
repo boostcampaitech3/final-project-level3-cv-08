@@ -97,7 +97,7 @@ def main():
         lane_0 = lane_xy[0:1]
         def lane_classification(idx, lane_number, max_lane):
             global lane_t_num
-            if abs(lane_xy[idx,1] - lane_xy[idx+1,1]) <= 1:
+            if abs(lane_xy[idx,1] - lane_xy[idx+1,1]) <= 1.5:
                 if len(lane_xy) > idx+2:
                     globals()[f'lane_{lane_number}'] = np.vstack((globals()[f'lane_{lane_number}'], lane_xy[idx+1:idx+2]))
                     lane_classification(idx+1, lane_number, max_lane)
@@ -107,7 +107,7 @@ def main():
                 s = 1
                 for i in range(max_lane+1):
 
-                    if abs(globals()[f'lane_{i}'][-1, 1] - lane_xy[idx+1, 1]) <= 1:
+                    if abs(globals()[f'lane_{i}'][-1, 1] - lane_xy[idx+1, 1]) <= 1.5:
 
                         globals()[f'lane_{i}'] = np.vstack((globals()[f'lane_{i}'], lane_xy[idx+1:idx+2]))
                         s = 0
@@ -148,8 +148,7 @@ def main():
             # Robustly fit linear model with RANSAC algorithm
             ransac = linear_model.RANSACRegressor()
             ransac.fit(add_square_feature(X), y)
-            inlier_mask = ransac.inlier_mask_
-            outlier_mask = np.logical_not(inlier_mask)
+            
 
             # Predict data of estimated models
             line_X = np.arange(X.min(), X.max())[:, np.newaxis]
