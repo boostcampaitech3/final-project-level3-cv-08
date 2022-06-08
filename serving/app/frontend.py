@@ -19,14 +19,29 @@ scene_a = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d0
 scene_b = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/cabf7be1-36a39a28.jpg')
 scene_c = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/f3c744e5-1f611c0a.jpg')
 
+fusion_scenes_a = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
+fusion_scenes_b = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
+fusion_scenes_c = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
+
+fusion_result_a = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
+fusion_result_b = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
+fusion_result_c = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
+
 video_a = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
 video_b = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
 result_video_b = open('/opt/ml/server_disk/1.webm', 'rb')
 video_c = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
 result_video_c = open('/opt/ml/server_disk/1.webm', 'rb')
 
+fusion_video_a = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
+fusion_video_b = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
+fusion_video_c = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
+
 Scenes = {'Scene A': scene_a, 'Scene B': scene_b, 'Scene C': scene_c}
+Fusion_Scenes = {'Scene A': fusion_scenes_a, 'Scene B': fusion_scenes_b, 'Scene C': fusion_scenes_c}
+Fusion_Result = {'Scene A': fusion_result_a, 'Scene B': fusion_result_b, 'Scene C': fusion_result_c}
 Videos = {'Video A': video_a, 'Video B': video_b, 'Video C': video_c}
+Fusion_Video_Result = {'Video A': fusion_video_a, 'Video B': fusion_video_b, 'Video C': fusion_video_c}
 
 inf_time_b = 0.0
 inf_time_c = 0.0
@@ -81,7 +96,10 @@ def main():
                     ]
         else:
             st.text('')
-            st.image(Scenes[option], caption=f'{option}')
+            if selected_item == 'Camera':
+                st.image(Scenes[option], caption=f'{option}')
+            elif selected_item == 'Fusion(Camera & Lidar)':
+                st.image(Fusion_Scenes[option], caption=f'{option}')
 
         def print_both_scene_result(response):
             st.text(f'Lidar Inference Time: {response.json()["lidar_inf_time"]:.5f}s')
@@ -99,10 +117,9 @@ def main():
         if st.button('Inference'):
             if selected_item == 'Fusion(Camera & Lidar)':
                 if option != 'Upload':
-                    with st.spinner(text='In progress...'):
-                        st.error("The 3D Model is preparing...")
-                        #response = requests.post(f"http://localhost:8001/both_prepared_order", option=option)
-                        #print_both_scene_result(response)
+                    st.image(Fusion_Result[option])
+                    #response = requests.post(f"http://localhost:8001/both_prepared_order", option=option)
+                    #print_both_scene_result(response)
                 else:
                     with st.spinner(text='In progress...'):
                         if files:
@@ -164,18 +181,11 @@ def main():
         if st.button('Inference'):
             if selected_item == 'Fusion(Camera & Lidar)':
                 if option != 'Upload':
-                    with st.spinner(text='In progress...'):
-                        st.error("The 3D Model is preparing...")
-                        #response = requests.post(f"http://localhost:8001/both_prepared_order", option=option)
-                        #print_both_video_result(response)
+                    st.video(Fusion_Video_Result[option])
+                    #response = requests.post(f"http://localhost:8001/both_prepared_order", option=option)
+                    #print_both_video_result(response)
                 else:
-                    with st.spinner(text='In progress...'):
-                        if files:
-                            st.error("The 3D Model is preparing...")
-                            #response = requests.post(f"http://localhost:8001/both_order", files=files)
-                            #print_both_video_result(response)
-                        else:
-                            st.error("Please upload files!!")
+                    st.text("remove the fusion's file uploader!!!!!")
 
             elif selected_item == 'Camera':
                 if option != 'Upload':
