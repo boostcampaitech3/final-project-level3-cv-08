@@ -9,10 +9,12 @@ from datetime import datetime
 from PIL import Image
 
 from app.model import get_model, predict_from_image_byte, predict_from_image, predict_from_video
-from lib.core.general import non_max_suppression, scale_coords
-from lib.utils import plot_one_box, show_seg_result
-from lib.models.YOLOP import MCnet
+from lib_bdd.core.general import non_max_suppression, scale_coords
+from lib_bdd.utils import plot_one_box, show_seg_result
+from lib_bdd.models.YOLOP import MCnet
 import cv2
+from urllib import request
+import io
 
 app = FastAPI()
 
@@ -85,7 +87,7 @@ async def make_order(files: List[UploadFile] = File(...),
                      model: MCnet = Depends(get_model)):
     products = []
     for file in files:
-        from lib.models.YOLOP import MCnet
+        #from lib.models.YOLOP import MCnet
         image_bytes = await file.read()
         img_det, inf_time, plot_time = predict_from_image_byte(model=model, image_bytes=image_bytes)
         product = InferenceImageProduct(result=img_det)
@@ -101,21 +103,24 @@ async def common_parameters(option:str = "None"):
 @app.post("/prepared_order/{option}", description="준비된 이미지, 비디오 주문을 요청합니다")
 async def make_prepared_order(option: str,
                      model: MCnet = Depends(get_model)):
+    #from lib_bdd.models.YOLOP import MCnet
     products = []
-    from lib.models.YOLOP import MCnet
+    # 이미지를 request에 넣어서 보내면 어떨까도 생각해보자.
     scene_options = {
-        'Scene A': '/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg', 
-        'Scene B': '/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/cabf7be1-36a39a28.jpg', 
-        'Scene C': '/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/f3c744e5-1f611c0a.jpg'
+        'Scene A': "https://storage.googleapis.com/pre-saved/Image/Image_A.jpg", 
+        'Scene B': "https://storage.googleapis.com/pre-saved/Image/Image_B.jpg", 
+        'Scene C': "https://storage.googleapis.com/pre-saved/Image/Image_C.jpg"
     }
     video_options = {
-        'Video A': '/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4',
-        'Video B': '/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4',
-        'Video C': '/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4'
+        'Video A': 'data/Video_A.mp4',
+        'Video B': 'data/Video_B.mp4',
+        'Video C': 'data/Video_C.mp4',
+        "Upload": 'data/uploaded.mp4'
     }
     if option in scene_options:
         img_path = scene_options[option]
-        image = Image.open(img_path)
+        res = request.urlopen(img_path).read()
+        image = Image.open(io.BytesIO(res))
         img_det, inf_time, plot_time = predict_from_image(model=model, image=image)
         product = InferenceImageProduct(result=img_det)
         products.append(product)
