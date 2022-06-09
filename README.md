@@ -1,6 +1,6 @@
-# object-detection-level2-cv-08
+# Autonomous Driving Safety Assistant
+### CV 08조 주행청소년 최종프로젝트 
 
-# 1. Introduction  
 <br/>
 <p align="center">
    <img src="https://kr.object.ncloudstorage.com/resume/boostcamp/boostcamplogo.png" />
@@ -9,7 +9,7 @@
    <img src="https://kr.object.ncloudstorage.com/resume/boostcamp/boostcamplogo2.png"/>
 </p>
 
-본 과정은 NAVER Connect 재단 주관으로 인공지능과 딥러닝 Production의 End-to-End를 명확히 학습하고 실무에서 구현할 수 있도록 훈련하는 약 5개월간의 교육과정입니다. 전체 과정은 이론과정(U-stage, 5주)와 실무기반 프로젝트(P-stage, 15주)로 구성되어 있으며, 두 번째 대회인 `Object detection`과제에 대한 **CV 08조** 의 문제해결방법을 기록합니다.
+본 과정은 NAVER Connect 재단 주관으로 인공지능과 딥러닝 Production의 End-to-End를 명확히 학습하고 실무에서 구현할 수 있도록 훈련하는 약 5개월간의 교육과정입니다. 전체 과정은 이론과정(U-stage, 5주)와 실무기반 프로젝트(P-stage, 15주)로 구성되어 있으며, 마지막 자율주제 프로젝트인 CV-08조의 자율주행간 위험예측 프로그램입니다.
 
 <br/>
 
@@ -18,14 +18,15 @@
 
 이준혁|윤서연|김 준|이재홍
 :-:|:-:|:-:|:-:
+![image6](https://user-images.githubusercontent.com/85532197/172898225-6b095eff-3b1d-4930-b42b-876b29214659.png) | ![image12](https://user-images.githubusercontent.com/85532197/172898232-d1405656-3b21-4f61-83e2-394d79c151e8.png) | ![image8](https://user-images.githubusercontent.com/85532197/172898238-ae6e984a-6927-4046-9430-f89bcf775cc1.png) | ![image10](https://user-images.githubusercontent.com/85532197/172898234-878b5509-66bd-4bf2-a28d-45da58635bfb.png)
 [Github](https://github.com/zzundi) | [Github](https://github.com/minakusi) | [Github](https://github.com/j8n17) | [Github](https://github.com/haymrpig) 
 
 
 ### 🔅 Contribution  
-- `이준혁` data augmentation 실험 / EfficientDet 모델 실험   
-- `윤서연` EDA&pseudo labeling json 파일 생성 코드 / detectron2 라이브러리 사용하여 모델 학습  
-- `김 준`   mmdetection 코드 분석 / atss, dyhead 활용 / 앙상블 
-- `이재홍` analysis tool 코드 작성 / mmdetection 모델 실험 / Cross-Validation 코드 작성
+- `이준혁` 3D Detection, Lane Projection  
+- `윤서연` Forecasting, Product Serving  
+- `김 준` 2D Detection, Segmentation, Product Serving
+- `이재홍` 3D Detection, Tracking, Model Concatenation
 
 <br/>
 
@@ -39,21 +40,6 @@
   - dependency : Pytorch 1.7.1
 
 # 2. Project Outline  
-
-![image](https://user-images.githubusercontent.com/71866756/162425733-802a0a99-d368-4056-8d27-9c8e1b2c8247.png)
-
-- Task : Object detection
-- Date : 2022.03.21 - 2022.04.07 (3 weeks)
-- Description : 쓰레기 사진을 입력받아서 `일반 쓰레기, 플라스틱, 종이, 유리 등`를 추측하여 `10개의 class`로 분류하고 박스의 영역을 구합니다.   
-- Image Resolution : (1024 x 1024)
-- Train : 4,833
-- Test : 4,871
-
-![objecteda](https://kr.object.ncloudstorage.com/resume/boostcamp/objecteda.png)
-
-
-### 🏆 Final Score  
-![image](https://user-images.githubusercontent.com/71866756/162425804-142bcc1c-ad37-4d13-8771-d5b9ae98e52e.png)
 
 
 <br/>
