@@ -63,7 +63,7 @@ deepsort_model = build_tracker(cfg_track, use_cuda=True)
 deepsort_car_model = build_tracker(cfg_track, use_cuda=True, is_car=True)
 
 
-def get_model(model_path: str = "data/model_best_train_seg_only.pth") -> MCnet:
+def get_model(model_path: str = "data/model_best_train_lane_only.pth") -> MCnet:
     """Model을 가져옵니다"""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_net(cfg).to(device)
@@ -174,7 +174,7 @@ def predict_from_video(model: MCnet, video_path: str, video_bytes = None):
     save_path_codec = str('result/'+ video_path.split("/")[-1][:-4] + "_before.mp4") if dataset.mode != 'stream' else str("data/result/web.mp4")
     save_path = str('result/'+ video_path.split("/")[-1]) if dataset.mode != 'stream' else str("data/result/web.mp4")
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(save_path_codec, fourcc, 10, (width, height), True)
+    out = cv2.VideoWriter(save_path_codec, fourcc, 8, (width, height), True)
     for i, (path, img, img_det, vid_cap,shapes) in enumerate(dataset):
         img = cv2.resize(img, (640, 384))
         img = transform(img).to(device)
