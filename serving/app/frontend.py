@@ -10,6 +10,7 @@ from app.confirm_button_hack import cache_on_button_press
 import numpy as np
 from urllib import request
 import ffmpeg
+import cv2
 
 import urllib.request
 
@@ -59,8 +60,6 @@ def main():
     files = []
 
     st.title("Autonomous Mad Max")
-    '''video_bytes = open("data/output_bdd.mp4", 'rb').read()
-    st.video(video_bytes)'''
     #st.title("CV08조 주행청소년 최종프로젝트")
     st.caption("")
     st.caption("")
@@ -153,6 +152,7 @@ def main():
             option = st.radio('Please choose or upload video', ('Video A', 'Video B', 'Video C', 'Upload'))
         st.info('Video A는 직접 모델을 거쳐서 시연되고 Video B, C는 결과물만 보여줍니다.')
         if option == 'Upload':
+            st.info("300 frame 이하의 영상만 inference 가능합니다.")
             if selected_item == 'Camera':
                 uploaded_video = st.file_uploader("Upload an video", type=["mp4", "mov", "avi"])
                 if uploaded_video:
@@ -217,9 +217,38 @@ def main():
                 else:
                     with st.spinner(text='In progress...'):
                         if files:
-                            st.error("Preparing...")
+                            #st.error("Preparing...")
+                            #########################################################################
+                            import tempfile
+
+                            tfile = tempfile.NamedTemporaryFile(delete=False)
+                            tfile.write(uploaded_video.read())
+                            #stframe = st.empty()
+                            vf = cv2.VideoCapture(tfile.name)
+                            height, width, _ = vf.read()[1].shape
+                            fps = vf.get(cv2.CAP_PROP_FPS)
+                            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                            out = cv2.VideoWriter('data/uploaded.mp4', fourcc, fps, (width, height), True)
+                            stframe = st.empty()
+                            i = 0
+                            while vf.isOpened():
+                                ret, frame = vf.read()
+                                #if i % 2 == 0:
+                                # if frame is read correctly ret is True
+                                stframe.write(f"{i}번째 frame 저장중....")
+                                if not ret:
+                                    print("Can't receive frame (stream end?). Exiting ...")
+                                    break
+                                out.write(frame)
+                                i += 1
+                            out.release()
+                            if i >= 300:
+                                st.error("300 프레임 이상의 영상은 inference 불가능합니다!")
+                            else:
+                                stframe.write("영상 저장 완료!")
                             #response = requests.post(f"http://localhost:8001/order", files=files)
-                            #print_image_video_result(response)
+                            response = requests.post(f"http://localhost:8001/prepared_order/{option}")
+                            print_image_video_result(response)
                         else:
                             st.error("Please upload image!!")
 

@@ -129,7 +129,7 @@ def show_seg_result_video(img, result, index, epoch, save_dir=None, is_ll=False,
                 cv2.imwrite(save_dir+"/batch_{}_{}_da_seg_gt.png".format(epoch,index), img)
             else:
                 cv2.imwrite(save_dir+"/batch_{}_{}_ll_seg_gt.png".format(epoch,index), img)  
-    return img
+    return img, color_seg
 
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     # Plots one bounding box on image img

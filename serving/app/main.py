@@ -114,7 +114,8 @@ async def make_prepared_order(option: str,
     video_options = {
         'Video A': 'data/Video_A.mp4',
         'Video B': 'data/Video_B.mp4',
-        'Video C': 'data/Video_C.mp4'
+        'Video C': 'data/Video_C.mp4',
+        "Upload": 'data/uploaded.mp4'
     }
     if option in scene_options:
         img_path = scene_options[option]
