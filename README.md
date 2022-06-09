@@ -9,20 +9,19 @@
    <img src="https://kr.object.ncloudstorage.com/resume/boostcamp/boostcamplogo2.png"/>
 </p>
 
-본 과정은 NAVER Connect 재단 주관으로 인공지능과 딥러닝 Production의 End-to-End를 명확히 학습하고 실무에서 구현할 수 있도록 훈련하는 약 5개월간의 교육과정입니다. 전체 과정은 이론과정(U-stage, 5주)와 실무기반 프로젝트(P-stage, 15주)로 구성되어 있으며, 두 번째 대회인 `Object detection`과제에 대한 **Level2 - 08조** 의 문제해결방법을 기록합니다.
+본 과정은 NAVER Connect 재단 주관으로 인공지능과 딥러닝 Production의 End-to-End를 명확히 학습하고 실무에서 구현할 수 있도록 훈련하는 약 5개월간의 교육과정입니다. 전체 과정은 이론과정(U-stage, 5주)와 실무기반 프로젝트(P-stage, 15주)로 구성되어 있으며, 두 번째 대회인 `Object detection`과제에 대한 **CV 08조** 의 문제해결방법을 기록합니다.
 
 <br/>
 
-## 🧙‍♀️ 주행 청소년  
+## 🚘 주행 청소년  
 ### 🔅 Members  
 
-허 석|이준혁|윤서연|김 준|이재홍
-:-:|:-:|:-:|:-:|:-:
- [Github](https://github.com/hursuk1) | [Github](https://github.com/zzundi) | [Github](https://github.com/minakusi) | [Github](https://github.com/j8n17) | [Github](https://github.com/haymrpig) 
+이준혁|윤서연|김 준|이재홍
+:-:|:-:|:-:|:-:
+[Github](https://github.com/zzundi) | [Github](https://github.com/minakusi) | [Github](https://github.com/j8n17) | [Github](https://github.com/haymrpig) 
 
 
 ### 🔅 Contribution  
-- `허 석`   yolov5 model 실험 / mmdection Cascade 구조 사용 및 분석
 - `이준혁` data augmentation 실험 / EfficientDet 모델 실험   
 - `윤서연` EDA&pseudo labeling json 파일 생성 코드 / detectron2 라이브러리 사용하여 모델 학습  
 - `김 준`   mmdetection 코드 분석 / atss, dyhead 활용 / 앙상블 
