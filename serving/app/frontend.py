@@ -8,6 +8,10 @@ from PIL import Image
 import streamlit as st
 from app.confirm_button_hack import cache_on_button_press
 import numpy as np
+from urllib import request
+import ffmpeg
+
+import urllib.request
 
 # SETTING PAGE CONFIG TO WIDE MODE
 ASSETS_DIR_PATH = os.path.join(Path(__file__).parent.parent.parent.parent, "assets")
@@ -15,15 +19,32 @@ ASSETS_DIR_PATH = os.path.join(Path(__file__).parent.parent.parent.parent, "asse
 st.set_page_config(layout="wide")
 
 root_password = 'password'
-scene_a = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
-scene_b = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/cabf7be1-36a39a28.jpg')
-scene_c = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/f3c744e5-1f611c0a.jpg')
 
-video_a = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
-video_b = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
-result_video_b = open('/opt/ml/server_disk/1.webm', 'rb')
-video_c = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
-result_video_c = open('/opt/ml/server_disk/1.webm', 'rb')
+def openImg(url):
+    res = request.urlopen(url).read()
+    img = Image.open(io.BytesIO(res))
+    return img
+
+def openVid(url, vid_name):
+    request.urlretrieve(url, vid_name)
+    vid = open(vid_name, 'rb')
+    return vid
+
+scene_a = openImg("https://storage.googleapis.com/pre-saved/Image/Image_A.jpg")
+#scene_a = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
+scene_b = openImg('https://storage.googleapis.com/pre-saved/Image/Image_B.jpg')
+scene_c = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
+
+#video_a = open('data/Video_A.webm', 'rb')
+#video_b = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
+#result_video_b = open('/opt/ml/server_disk/1.webm', 'rb')
+#video_c = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
+#result_video_c = open('/opt/ml/server_disk/1.webm', 'rb')
+video_a = openVid("https://storage.googleapis.com/pre-saved/Video/Video_1.mp4", "data/Video_A.mp4")
+video_b = openVid("https://storage.googleapis.com/pre-saved/Video/Video_B.mp4", "data/Video_B.mp4")
+result_video_b = openVid("https://storage.googleapis.com/pre-saved/Video/Video_B.mp4", "data/Video_B.mp4")
+video_c = openVid("https://storage.googleapis.com/pre-saved/Video/Video_C.mp4", "data/Video_C.mp4")
+result_video_c = openVid("https://storage.googleapis.com/pre-saved/Video/Video_C.mp4", "data/Video_C.mp4")
 
 Scenes = {'Scene A': scene_a, 'Scene B': scene_b, 'Scene C': scene_c}
 Videos = {'Video A': video_a, 'Video B': video_b, 'Video C': video_c}
@@ -38,6 +59,8 @@ def main():
     files = []
 
     st.title("Autonomous Mad Max")
+    '''video_bytes = open("data/output_bdd.mp4", 'rb').read()
+    st.video(video_bytes)'''
     #st.title("CV08조 주행청소년 최종프로젝트")
     st.caption("")
     st.caption("")
@@ -146,6 +169,7 @@ def main():
         else:
             video_bytes = Videos[option].read()
             st.video(video_bytes)
+            
         
         def print_both_video_result(response):
             st.text(f'Lidar Inference Time: {response.json()["lidar_inf_time"]:.5f}s')

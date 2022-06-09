@@ -1,4 +1,5 @@
 import io
+import os
 from typing import List, Dict, Any
 
 import albumentations
@@ -10,15 +11,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
-from lib.config import cfg
-from lib.models.YOLOP import MCnet, get_net
-from lib.core.general import non_max_suppression, scale_coords
-from lib.core.function import AverageMeter
-from lib.utils import plot_one_box, show_seg_result, time_synchronized, show_seg_result_video
+from lib_bdd.config import cfg
+from lib_bdd.models.YOLOP import MCnet, get_net
+from lib_bdd.core.general import non_max_suppression, scale_coords
+from lib_bdd.core.function import AverageMeter
+from lib_bdd.utils import plot_one_box, show_seg_result, time_synchronized, show_seg_result_video
 import time
 import cv2
 import torch.backends.cudnn as cudnn
-from lib.dataset import LoadImages
+from lib_bdd.dataset import LoadImages
+import subprocess as sp
+import shlex
 
 import torchvision.transforms as transforms
 normalize = transforms.Normalize(
@@ -28,12 +31,13 @@ normalize = transforms.Normalize(
     )
 
 transform=transforms.Compose([
+            #transforms.Resize((640, 384)),
             transforms.ToTensor(),
             normalize,
         ])
 
 
-def get_model(model_path: str = "/opt/ml/final-project-level3-cv-08/YOLOP/runs/BddDataset/model_best_train_seg_only.pth") -> MCnet:
+def get_model(model_path: str = "data/model_best_train_seg_only.pth") -> MCnet:
     """Model을 가져옵니다"""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_net(cfg).to(device)
@@ -44,13 +48,14 @@ def get_model(model_path: str = "/opt/ml/final-project-level3-cv-08/YOLOP/runs/B
 def _transform_image(image: Image):
     transform = albumentations.Compose(
         [
-            #albumentations.Resize(height=640, width=384),
+            #albumentations.Resize(height=720, width=1280),
             albumentations.Normalize(mean=(0.362, 0.404, 0.398), std=(0.236, 0.274, 0.225)),
             albumentations.pytorch.transforms.ToTensorV2(),
         ]
     )
     ori_size = (image.width, image.height)
     ori_img = image.convert("RGB")
+    ori_img = ori_img.resize((1280, 720))
     ori_img = np.array(ori_img) #1280, 720
     image = image.resize((640, 384))
     image = image.convert("RGB")
@@ -128,11 +133,15 @@ def predict_from_video(model: MCnet, video_path: str):
     t0 = time.time()
 
     vid_path, vid_writer = None, None
+    path, img, img_det, vid_cap,shapes = next(iter(dataset))
+    height, width, _ = img_det.shape
 
     inf_time = AverageMeter()
     nms_time = AverageMeter()
-
+    save_path = str('result/'+ video_path.split("/")[-1]) if dataset.mode != 'stream' else str("data/result/web.mp4")
+    process = sp.Popen(shlex.split(f'ffmpeg -y -s {width}x{height} -pixel_format bgr24 -f rawvideo -r 8 -i pipe: -vcodec libx264 -pix_fmt yuv420p -crf 24 {save_path}'), stdin=sp.PIPE)
     for i, (path, img, img_det, vid_cap,shapes) in enumerate(dataset):
+        img = cv2.resize(img, (640, 384))
         img = transform(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         if img.ndimension() == 3:
@@ -154,7 +163,8 @@ def predict_from_video(model: MCnet, video_path: str):
         nms_time.update(t4-t3,img.size(0))
         det=det_pred[0]
         #Path(path).name
-        save_path = str('/opt/ml/server_disk' +'/'+ Path(path).name.split('.')[0] + '.webm') if dataset.mode != 'stream' else str('/opt/ml/server_disk' + '/' + "web.mp4")
+        #save_path = str('/opt/ml/server_disk' +'/'+ Path(path).name.split('.')[0] + '.webm') if dataset.mode != 'stream' else str('/opt/ml/server_disk' + '/' + "web.mp4")
+        
 
         _, _, height, width = img.shape
         h,w,_=img_det.shape
@@ -185,25 +195,14 @@ def predict_from_video(model: MCnet, video_path: str):
             for *xyxy,conf,cls in reversed(det):
                 label_det_pred = f'{names[int(cls)]} {conf:.2f}'
                 plot_one_box(xyxy, img_det , label=label_det_pred, color=colors[int(cls)], line_thickness=2)
+    
+        process.stdin.write(img_det.tobytes())
         
-        if dataset.mode == 'images':
-            cv2.imwrite(save_path,img_det)
+    # Close and flush stdin
+    process.stdin.close()
 
-        elif dataset.mode == 'video':
-            if vid_path != save_path:  # new video
-                vid_path = save_path
-                if isinstance(vid_writer, cv2.VideoWriter):
-                    vid_writer.release()  # release previous video writer
-
-                fourcc = 'VP90'  # output video codec
-                fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                h,w,_=img_det.shape
-                vid_writer = cv2.VideoWriter(save_path, int(cv2.VideoWriter_fourcc(*fourcc)), fps, (w, h))
-            vid_writer.write(img_det)
-        
-        else:
-            cv2.imshow('image', img_det)
-            cv2.waitKey(1)  # 1 millisecond
+    # Wait for sub-process to finish
+    process.wait()
 
     print('Results saved to %s' % Path('/opt/ml/server_disk'))
     print('Done. (%.3fs)' % (time.time() - t0))
