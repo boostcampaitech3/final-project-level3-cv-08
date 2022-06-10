@@ -6,7 +6,7 @@ _base_ = [
 
 point_cloud_range = [0, -39.68, -3, 69.12, 39.68, 1]
 # dataset settings
-data_root = '/opt/ml/kitti1/'
+data_root = '/opt/ml/kitti_0095/'
 class_names = ['Pedestrian', 'Cyclist', 'Car']
 # PointPillars adopted a different sampling strategies among classes
 db_sampler = dict(

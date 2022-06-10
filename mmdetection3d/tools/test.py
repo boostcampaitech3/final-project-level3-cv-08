@@ -52,6 +52,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from models import *
 from social_utils_add import *
+import shutil
 import yaml
 import cv2
 from skimage import io
@@ -293,6 +294,16 @@ def main():
     """
     """
 
+    """
+    remove saved images
+    """
+    if os.path.exists('/opt/ml/images/3D_recursive_sort'):
+        shutil.rmtree('/opt/ml/images/3D_recursive_sort')
+    if os.path.exists('/opt/ml/images/2D_recursive_sort'):
+        shutil.rmtree('/opt/ml/images/2D_recursive_sort')
+    os.makedirs('/opt/ml/images/3D_recursive_sort')
+    os.makedirs('/opt/ml/images/2D_recursive_sort')
+
 
     if not distributed:
         model = MMDataParallel(model, device_ids=cfg.gpu_ids)
@@ -311,6 +322,33 @@ def main():
     
     with open('/opt/ml/outputs/output.pkl', 'wb') as f:
         pickle.dump(bev_outputs, f)
+
+    from datetime import datetime
+    from PIL import Image
+    
+    now = datetime.now()
+    img_root = '/opt/ml/images'
+    base_path = os.path.join('/opt/ml/output_video', cfg.data_root.split('/')[-1]+ '_' + str(now.date()) + '_' +  str(now.time()))
+    if not os.path.exists(base_path):
+        print("created ", base_path)
+        os.makedirs(base_path)
+
+    video_save_path = os.path.join(base_path, 'output.avi')
+    fps = 10
+    fourcc = cv2.VideoWriter_fourcc(*'DIVX')
+    videoWriter = cv2.VideoWriter(video_save_path,fourcc,fps,(2080,640))
+
+    images_2D = sorted(glob.glob(os.path.join(img_root, '2D_recursive_sort', '*.png')))
+    images_3D = sorted(glob.glob(os.path.join(img_root, '3D_recursive_sort', '*.png')))
+    for (img_2d, img_3d) in tqdm(zip(images_2D, images_3D), total=len(images_2D)):  
+        # Here 297 is the number of frames in the dataset. You need to make the appropriate changes
+        frame_2d = np.array(Image.open(img_2d).resize((1280, 640)))
+        frame_3d = np.array(Image.open(img_3d).resize((800, 640)))
+        
+        concat_frame = np.concatenate([frame_2d, frame_3d], axis=1)
+        concat_frame = concat_frame[:, :, [2, 1, 0]]
+        videoWriter.write(concat_frame)
+    videoWriter.release()
 
 
 if __name__ == '__main__':

@@ -736,7 +736,8 @@ class SortCustom(object):
         unmatched_dets    : match가 되지 않은 detections
         unmatched_trks    : match가 되지 않은 detections
         """
-        dets = filterDetections(dets)
+        if dets.shape[0]!=0:
+            dets = filterDetections(dets)
         # get predicted locations from existing trackers.
         trks = np.zeros((len(self.trackers), 6))
         trks_total_coordinate = np.zeros((len(self.trackers), 7))
@@ -751,6 +752,7 @@ class SortCustom(object):
         trks = np.ma.compress_rows(np.ma.masked_invalid(trks))
         for t in reversed(to_del):
             self.trackers.pop(t)
+        
         matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(dets, trks, self.centerpoint_threshold)
         """
         detection과 tracking이 match가 안 된 이유 가능성 크게 3 종류
@@ -767,8 +769,11 @@ class SortCustom(object):
         1-2번 가능성을 해결하기 위해서 unmatched 2D와 unmatched tracking matching
         """
         # find unmatched 2D
-        edge_bbox_3d = center2Edge(bbox_3d=dets) # N, 3, 8
-        dets_pixel_3d = toPixelCoord(bbox_3d=edge_bbox_3d, v2p_matrix=self.v2p_matrix)
+        if dets.shape[0]>0:
+            edge_bbox_3d = center2Edge(bbox_3d=dets) # N, 3, 8
+            dets_pixel_3d = toPixelCoord(bbox_3d=edge_bbox_3d, v2p_matrix=self.v2p_matrix)
+        else:
+            dets_pixel_3d = np.empty((0, 2, 8))
         matches_2d3d, unmatched_indices_2d, unmatched_indices_3d, _ = match2D3D(dets_pixel_2d, dets_pixel_3d, self.iou_threshold)
 
         # match unmatched 3D tracking & unmatched 2D
@@ -816,7 +821,7 @@ class SortCustom(object):
 
 ############################################################################################################################################
 
-def correctCoord(src_info, dst_info, dst_bbox_x, dst_bbox_y):
+def correctCoord(src_info, dst_info, dst_bbox_x, dst_bbox_y, tracking_id, src_frame, dst_frame):
     """
     src info를 기준으로 dst_info에서 내 차량의 움직임을 제거한 bbox좌표 반환 (북쪽이 위쪽 방향)
 
@@ -825,18 +830,20 @@ def correctCoord(src_info, dst_info, dst_bbox_x, dst_bbox_y):
     dst_bbox        : 보정할 bbox 좌표 x, y
     """
     src_utm = src_info[:2]
-
-    dst_yaw = dst_info[2] - np.pi/2
+    
+    frame_diff = dst_frame - src_frame
+    dst_yaw = np.pi/2 - (dst_info[2] + (frame_diff)*src_info[2])/(frame_diff+1)
     dst_utm = dst_info[:2]
 
     dst_rotation_mat = np.array([[np.cos(dst_yaw), -np.sin(dst_yaw)],
                             [np.sin(dst_yaw), np.cos(dst_yaw)]])
 
     dst_bbox_rot = np.array([dst_bbox_x, dst_bbox_y]).reshape(1, 2)@dst_rotation_mat.T # (1, 2)
+    
     ego_moving = dst_utm[::-1] - src_utm[::-1] # (1, 2)
-
     corrected_bbox = dst_bbox_rot + ego_moving # (1, 2)
-
+    
+        
     return corrected_bbox[0][0], corrected_bbox[0][1]
 
 def makeForecastDict(trackers, forecast_dict, prev_updated_ids, prev_forecast, predicted_updated_ids, oxt_dict, frame):
@@ -863,10 +870,11 @@ def makeForecastDict(trackers, forecast_dict, prev_updated_ids, prev_forecast, p
         tracking_id = tracker[5]
         if tracking_id in forecast_dict.keys():
             src_frame = forecast_dict[tracking_id][0][1]
-            corrected_x, corrected_y = correctCoord(oxt_dict[src_frame], oxt_dict[frame], x, y)
+            corrected_x, corrected_y = correctCoord(oxt_dict[src_frame], oxt_dict[frame], x, y, tracking_id, src_frame, frame)
             forecast_dict[tracking_id] = np.append(forecast_dict[tracking_id], np.array([[tracking_id, frame, corrected_x, corrected_y]]), axis=0)
+
         else:
-            corrected_x, corrected_y = correctCoord(oxt_dict[frame], oxt_dict[frame], x, y)
+            corrected_x, corrected_y = correctCoord(oxt_dict[frame], oxt_dict[frame], x, y, tracking_id, frame, frame)
             forecast_dict[tracking_id] = np.array([[tracking_id, frame, corrected_x, corrected_y]])
         cur_updated_ids.append(tracking_id)
     
@@ -911,8 +919,8 @@ def recoverCoord(src_info, dst_info, points):
     points          : 보정할 bbox 좌표 x, y (12, 2)
     """
     src_utm = src_info[:2]
-
-    dst_yaw = np.pi/2 - dst_info[2]
+    # print("dst yaw : ", dst_info[2])
+    dst_yaw = dst_info[2] - np.pi/2
     dst_utm = dst_info[:2]
 
     dst_rotation_mat = np.array([[np.cos(dst_yaw), -np.sin(dst_yaw)],
@@ -921,7 +929,7 @@ def recoverCoord(src_info, dst_info, points):
     ego_moving = dst_utm[::-1] - src_utm[::-1] # (1, 2)
 
     corrected_bbox = points - ego_moving # (12, 2)
-    corrected_bbox = corrected_bbox@dst_rotation_mat.T  # (12, 2)
+    corrected_bbox = (corrected_bbox)@dst_rotation_mat.T  # (12, 2)
     
     return corrected_bbox
 
@@ -974,7 +982,7 @@ def forecastTest(test_dataset, model, device, hyper_params, density_image, recov
             interpolated_future = interpolated_future.cpu().numpy()
             best_guess_dest = best_guess_dest.cpu().numpy()
             
-            # final overall prediction
+            # final overall predictionn
             predicted_future = np.concatenate((interpolated_future, best_guess_dest), axis = 1)
             predicted_future = np.reshape(predicted_future, (-1, hyper_params["future_length"], 2))
             x /= (hyper_params["data_scale"]*10)
@@ -1856,3 +1864,350 @@ def latlon_to_zone_number(latitude, longitude):
 
 def zone_number_to_central_longitude(zone_number):
     return (zone_number - 1) * 6 - 180 + 3
+
+###################################################################33
+#projection utils
+#################################################################3333
+"""
+ @leofansq
+
+ Basic function:
+    show_img(name, img): Show the image
+    find_files(directory, pattern): Method to find target files in one directory, including subdirectory
+ Load function:
+    load_calib_cam2cam(filename, debug=False): Only load R_rect & P_rect for need
+    load_calib_lidar2cam(filename, debug=False): Load calib parameters for LiDAR2Cam
+    load_calib(filename, debug=False): Load the calib parameters which has R_rect & P_rect & Tr in the same file
+    load_img(filename, debug=False): Load the image
+    load_lidar(filename, debug=False): Load the PointCloud
+ Process function:
+    cal_proj_matrix_raw(filename_c2c, filename_l2c, camera_id, debug=False): Compute the projection matrix from LiDAR to Img
+    cal_proj_matrix(filename, camera_id, debug=False): Compute the projection matrix from LiDAR to Image
+    project_lidar2img(img, pc, p_matrix, debug=False): Project the LiDAR PointCloud to Image
+    generate_colorpc(img, pc, pcimg, debug=False): Generate the PointCloud with color
+    save_pcd(filename, pc_color): Save the PointCloud with color in the term of .pcd
+"""
+import cv2
+import numpy as np
+from pyntcloud import PyntCloud
+
+import os
+import fnmatch
+from tqdm import tqdm
+from pprint import pprint
+
+#**********************************************************#
+#                    Basic Function                        #
+#**********************************************************#
+
+def show_img(name, img):
+    """
+    Show the image
+
+    Parameters:    
+        name: name of window    
+        img: image
+    """
+    cv2.namedWindow(name, 0)
+    cv2.imshow(name, img)
+
+def find_files(directory, pattern):
+    """
+    Method to find target files in one directory, including subdirectory
+    :param directory: path
+    :param pattern: filter pattern
+    :return: target file path list
+    """
+    file_list = []
+    for root, _, files in os.walk(directory):
+        for basename in files:
+            if fnmatch.fnmatch(basename, pattern):
+                filename = os.path.join(root, basename)
+                file_list.append(filename)
+    
+    return file_list
+
+#**********************************************************#
+#                     Load Function                        #
+#**********************************************************#
+
+def load_calib_cam2cam(filename, debug=False):
+    """
+    Only load R_rect & P_rect for neeed
+    Parameters: filename of the calib file
+    Return: 
+        R_rect: a list of r_rect(shape:3*3)
+        P_rect: a list of p_rect(shape:3*4)
+    """
+    with open(filename) as f_calib:
+        lines = f_calib.readlines()
+    
+    R_rect = []
+    P_rect = []
+
+    for line in lines:
+        title = line.strip().split(' ')[0]
+        if title[:-4] == "R_rect":
+            r_r = np.array(line.strip().split(' ')[1:], dtype=np.float32)
+            r_r = np.reshape(r_r, (3,3))
+            R_rect.append(r_r)
+        elif title[:-4] == "P_rect":
+            p_r = np.array(line.strip().split(' ')[1:], dtype=np.float32)
+            p_r = np.reshape(p_r, (3,4))
+            P_rect.append(p_r)
+    
+    if debug:
+        print ("R_rect:")
+        pprint (R_rect)
+
+        print ()
+        print ("P_rect:")
+        pprint (P_rect)
+    
+    return R_rect, P_rect
+
+def load_calib_lidar2cam(filename, debug=False):
+    """
+    Load calib
+    Parameters: filename of the calib file
+    Return:
+        tr: shape(4*4)
+            [  r   t
+             0 0 0 1]
+    """
+    with open(filename) as f_calib:
+        lines = f_calib.readlines()
+    
+    for line in lines:
+        title = line.strip().split(' ')[0]
+        if title[:-1] == "R":
+            r = np.array(line.strip().split(' ')[1:], dtype=np.float32)
+            r = np.reshape(r, (3,3))
+        if title[:-1] == "T":
+            t = np.array(line.strip().split(' ')[1:], dtype=np.float32)
+            t = np.reshape(t, (3,1))
+    
+    tr = np.hstack([r,t])
+    tr = np.vstack([tr,np.array([0,0,0,1])])
+
+    if debug:
+        print ()
+        print ("Tr:")
+        print (tr)
+
+    return tr
+
+def load_calib(filename, debug=False):
+    """
+    Load the calib parameters which has R_rect & P_rect & Tr in the same file
+    Parameters:
+        filename: the filename of the calib file
+    Return:
+        R_rect, P_rect, Tr
+    """
+    with open(filename) as f_calib:
+        lines = f_calib.readlines()
+    
+        P_rect = []    
+    for line in lines:
+        title = line.strip().split(' ')[0]
+        if len(title):
+            if title[0] == "R":
+                R_rect = np.array(line.strip().split(' ')[1:], dtype=np.float32)
+                R_rect = np.reshape(R_rect, (3,3))
+            elif title[0] == "P":
+                p_r = np.array(line.strip().split(' ')[1:], dtype=np.float32)
+                p_r = np.reshape(p_r, (3,4))
+                P_rect.append(p_r)
+            elif title[:-1] == "Tr_velo_to_cam":
+                Tr = np.array(line.strip().split(' ')[1:], dtype=np.float32)
+                Tr = np.reshape(Tr, (3,4))
+                Tr = np.vstack([Tr,np.array([0,0,0,1])])
+    
+    return R_rect, P_rect, Tr
+
+
+def load_img(filename, debug=False):
+    """
+    Load the image
+    Parameter:
+        filename: the filename of the image
+    Return:
+        img: image
+    """
+    img = cv2.imread(filename)
+    
+    if debug: show_img("Image", img)
+
+    return img
+
+def load_lidar(filename, debug=False):
+    """
+    Load the PointCloud
+    Parameter:
+        filename: the filename of the PointCloud
+    Return:
+        points: PointCloud associated with the image
+    """
+    # N*4 -> N*3
+    points = np.fromfile(filename, dtype=np.float32)
+    points = np.reshape(points, (-1,4))
+    points = points[:, :3]
+
+    points.tofile("./temp_pc.bin")
+
+    # Remove all points behind image plane (approximation)
+    cloud = PyntCloud.from_file("./temp_pc.bin")
+    cloud.points = cloud.points[cloud.points["x"]>=0]
+    points = np.array(cloud.points)
+    if debug:
+        print (points.shape)
+
+    return points
+
+#**********************************************************#
+#                   Process Function                       #
+#**********************************************************#
+
+def cal_proj_matrix_raw(filename_c2c, filename_l2c, camera_id, debug=False):
+    """
+    Compute the projection matrix from LiDAR to Img
+    Parameters:
+        filename_c2c: filename of the calib file for cam2cam
+        filename_l2c: filename of the calib file for lidar2cam
+        camera_id: the NO. of camera
+    Return:
+        P_lidar2img: the projection matrix from LiDAR to Img
+    """
+    # Load Calib Parameters
+    R_rect, P_rect = load_calib_cam2cam(filename_c2c, debug)
+    tr = load_calib_lidar2cam(filename_l2c, debug)
+
+    # Calculation
+    R_cam2rect = np.hstack([R_rect[0], np.array([[0],[0],[0]])])
+    R_cam2rect = np.vstack([R_cam2rect, np.array([0,0,0,1])])
+    
+    P_lidar2img = np.matmul(P_rect[camera_id], R_cam2rect)
+    P_lidar2img = np.matmul(P_lidar2img, tr)
+
+    if debug:
+        print ()
+        print ("P_lidar2img:")
+        print (P_lidar2img)
+
+    return P_lidar2img
+
+def cal_proj_matrix(filename, camera_id, debug=False):
+    """
+    Compute the projection matrix from LiDAR to Img
+    Parameters:
+        filename: filename of the calib file
+        camera_id: the NO. of camera
+    Return:
+        P_lidar2img: the projection matrix from LiDAR to Img
+    """
+    # Load Calib Parameters
+    R_rect, P_rect, tr = load_calib(filename, debug)
+
+    # Calculation
+    R_cam2rect = np.hstack([R_rect, np.array([[0],[0],[0]])])
+    R_cam2rect = np.vstack([R_cam2rect, np.array([0,0,0,1])])
+    
+    P_lidar2img = np.matmul(P_rect[camera_id], R_cam2rect)
+    P_lidar2img = np.matmul(P_lidar2img, tr)
+
+    if debug:
+        print ()
+        print ("P_lidar2img:")
+        print (P_lidar2img)
+
+    return P_lidar2img
+
+def project_lidar2img(img, pc, p_matrix, debug=False):
+    """
+    Project the LiDAR PointCloud to Image
+    Parameters:
+        img: Image
+        pc: PointCloud
+        p_matrix: projection matrix
+    """
+    # Dimension of data & projection matrix
+    dim_norm = p_matrix.shape[0]
+    dim_proj = p_matrix.shape[1]
+
+    # Do transformation in homogenuous coordinates
+    pc_temp = pc.copy()
+    if pc_temp.shape[1]<dim_proj:
+        pc_temp = np.hstack([pc_temp, np.ones((pc_temp.shape[0],1))])
+    points = np.matmul(p_matrix, pc_temp.T)
+    points = points.T
+
+    temp = np.reshape(points[:,dim_norm-1], (-1,1))
+    points = points[:,:dim_norm]/(np.matmul(temp, np.ones([1,dim_norm])))
+    
+    # Plot
+    if debug:
+        depth_max = np.max(pc[:,0])
+        for idx,i in enumerate(points):
+            color = int((pc[idx,0]/depth_max)*255)
+            cv2.rectangle(img, (int(i[0]-1),int(i[1]-1)), (int(i[0]+1),int(i[1]+1)), (0, 0, color), -1)
+        show_img("Test", img)
+    points = points[:, ]
+    return points
+
+def generate_colorpc(img, pc, pcimg, debug=False):
+    """
+    Generate the PointCloud with color
+    Parameters:
+        img: image
+        pc: PointCloud
+        pcimg: PointCloud project to image
+    Return:
+        pc_color: PointCloud with color e.g. X Y Z R G B
+    """
+    x = np.reshape(pcimg[:,0], (-1,1))
+    y = np.reshape(pcimg[:,1], (-1,1))
+    xy = np.hstack([x,y])
+
+    pc_color = []
+    for idx, i in enumerate(xy):
+        if (i[0]>1 and i[0]<img.shape[1]) and (i[1]>1 and i[1]<img.shape[0]): 
+            bgr = img[int(i[1]), int(i[0])]
+            p_color = [pc[idx][0], pc[idx][1], pc[idx][2], bgr[2], bgr[1], bgr[0]]
+            pc_color.append(p_color)
+    pc_color = np.array(pc_color)
+
+    return pc_color
+
+def save_pcd(filename, pc_color):
+    """
+    Save the PointCloud with color in the term of .pcd
+    Parameter:
+        filename: filename of the pcd file
+        pc_color: PointCloud with color
+    """
+    f = open(filename, "w")
+
+    f.write("# .PCD v0.7 - Point Cloud Data file format\n")
+    f.write("VERSION 0.7\n")
+    f.write("FIELDS x y z rgb\n")
+    f.write("SIZE 4 4 4 4\n")
+    f.write("TYPE F F F F\n")
+    f.write("COUNT 1 1 1 1\n")
+    f.write("WIDTH {}\n".format(pc_color.shape[0]))
+    f.write("HEIGHT 1\n")
+    f.write("POINTS {}\n".format(pc_color.shape[0]))
+    f.write("DATA ascii\n")
+
+    for i in pc_color:
+        # rgb = (int(i[3])<<16) | (int(i[4])<<8) | (int(i[5]) | 1<<24)
+        # f.write("{:.6f} {:.6f} {:.6f} {}\n".format(i[0],i[1],i[2],rgb))
+        f.write("{:.6f} {:.6f} {:.6f} {} {} {}\n".format(i[0],i[1],i[2],i[3],i[4],i[5]))
+    
+    f.close()
+
+def add_square_feature(X):
+    X = np.concatenate([(X**2).reshape(-1,1), X], axis=1)
+    return X
+
+

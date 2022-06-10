@@ -11,10 +11,12 @@ import cv2
 import os
 import copy
 
+from sklearn import linear_model
 from mmdet3d.models import (Base3DDetector, Base3DSegmentor,
                             SingleStageMono3DDetector)
 
-from utils.utils import lidar2Bev, Sort, SortCustom, detection2Bev, from_latlon, bevPoints, drawBbox, transformImg, bevPoints_tracking, load_kitti_tracking_label, load_kitti_tracking_calib, Cam2LidarBev_tracking, makeForecastDict, filterUpdatedIds, forecastTest
+from utils.utils import center2ImageBev, lidar2Bev, Sort, SortCustom, detection2Bev, from_latlon, bevPoints, drawBbox, transformImg, bevPoints_tracking, load_kitti_tracking_label, load_kitti_tracking_calib, Cam2LidarBev_tracking, makeForecastDict, filterUpdatedIds, forecastTest, find_files, cal_proj_matrix, cal_proj_matrix_raw, load_img, load_lidar, project_lidar2img, add_square_feature
+
 from lib.core.general import non_max_suppression, scale_coords
 from lib.utils import plot_one_box,show_seg_result
 from ..core.evaluation.kitti_utils.rotate_iou import rotate_iou_gpu_eval
@@ -83,11 +85,13 @@ def single_gpu_test(model,
     predicted_updated_ids = []
     prev_forecast = np.empty((0, 0, 0))
     oxt_dict = {}
-    with open('/opt/ml/kitti_testing_13/oxt_0013.txt', 'r') as oxt_file:
-        oxt_datas = oxt_file.readlines()
+    # with open('/opt/ml/kitti_testing_13/oxt_0013.txt', 'r') as oxt_file:
+    #     oxt_datas = oxt_file.readlines()
 
     if not os.path.exists('/opt/ml/tracking'):
         os.makedirs('/opt/ml/tracking')
+
+    
     with open('/opt/ml/tracking/tracking.txt', 'w') as tracking_file:
         print(f'if using cv2 to draw points -> x,y order : cv2.line(..., pt1=(x,y), pt2=(x,y), ...)', file=tracking_file)
         print(f'frame, tracking_id, x(garo), y(sero), class_id', file=tracking_file)
@@ -98,7 +102,11 @@ def single_gpu_test(model,
             velodyne_path = dataset[i]['img_metas'][0].data['pts_filename']
             img_path = velodyne_path.replace('velodyne', 'image_2').replace('bin', 'png')
             
-            img = Image.open(img_path).resize((640, 384))
+            img = Image.open(img_path)
+            img_ori = np.array(copy.deepcopy(img))
+            img_ori_h, img_ori_w = img_ori.shape[0], img_ori.shape[1]
+            img = img.resize((640, 384))
+            
             img_det = np.array(img)
 
             if torch.cuda.is_available():
@@ -114,8 +122,10 @@ def single_gpu_test(model,
             det_pred = non_max_suppression(inf_out, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False)
             det=det_pred[0]
             # 원래 사이즈로 bbox 복원
-            bbox_2d = np.array(det[det[:, 5]<=2].detach().cpu())*np.array([1242/640, 375/384, 1242/640, 375/384, 1, 1])
-
+            if det.shape[0]!=0:
+                bbox_2d = np.array(det[det[:, 5]<=2].detach().cpu())*np.array([img_ori_w/640, img_ori_h/384, img_ori_w/640, img_ori_h/384, 1, 1])
+            else:
+                det = np.empty((0, 6))
             _, _, height, width = img.shape
             h,w,_=img_det.shape
 
@@ -124,11 +134,10 @@ def single_gpu_test(model,
 
             _, ll_seg_out = torch.max(ll_seg_out, 1)
             ll_seg_out = ll_seg_out.int().squeeze().cpu().numpy()
-
-            img_det = show_seg_result(img_det, (da_seg_out, ll_seg_out), _, _, is_demo=True)
+            img_det = show_seg_result(img_det, img_ori_h, img_ori_w, (da_seg_out, ll_seg_out), _, _, is_demo=True)
             if len(det):
                 # det[:,:4] = scale_coords(img.shape[2:],det[:,:4],img_det.shape).round()
-                det[:, :4] *= torch.tensor([1242/640, 375/384, 1242/640, 375/384]).cuda()
+                det[:, :4] *= torch.tensor([img_ori_w/640, img_ori_h/384, img_ori_w/640, img_ori_h/384]).cuda()
                 for *xyxy,conf,cls in reversed(det):
                     label_det_pred = f'{names[int(cls)]} {conf:.2f}'
                     plot_one_box(xyxy, img_det, label=label_det_pred, color=colors[int(cls)], line_thickness=2)
@@ -139,11 +148,16 @@ def single_gpu_test(model,
             3D start
             """
             # 현재 차량의 utm_x, utm_y, yaw를 구한다.
-            oxt_data = oxt_datas[i].rstrip().split(' ') 
+
+            # oxt_data = oxt_datas[i].rstrip().split(' ')
+            oxt_fname = os.path.join(cfg.data_root, 'oxts', 'data', str(i).zfill(6)+'.txt')
+            with open(oxt_fname, 'r') as oxt_file:
+                oxt_data = oxt_file.readlines() 
+            oxt_data = oxt_data[0].rstrip().split(' ')
             oxt_data = np.array(oxt_data, dtype=np.float32)
             utm_coord = from_latlon(oxt_data[0], oxt_data[1])
             utm_x, utm_y = utm_coord[0], utm_coord[1] 
-            oxt_dict[i] = np.array([utm_x, utm_y, oxt_data[5]+0.5]) # utm_x, utm_y, yaw
+            oxt_dict[i] = np.array([utm_x, utm_y, oxt_data[5], oxt_data[6], oxt_data[7]]) # utm_x, utm_y, yaw
 
 
             with torch.no_grad():
@@ -179,7 +193,7 @@ def single_gpu_test(model,
             rotated_points_detections = bevPoints(total_det[:, [0, 1, 6, 3, 4]])
 
             # draw bbox on bev lidar points
-            # density_image, density_image_detect = drawBbox(rotated_points, trackers, rotated_points_detections, density_image, i, tracking_file)
+            density_image, density_image_detect = drawBbox(rotated_points, trackers, rotated_points_detections, density_image, i, tracking_file)
 
             """
             """
@@ -205,7 +219,6 @@ def single_gpu_test(model,
             forecast start
             """
             
-            # print(forecast_dict[1])
             if len(filtered_forecast_dict)!=0:
                 forecast_test_dataset = SocialDataset(filtered_forecast_dict, set_name="test", b_size=25, t_tresh=0, d_tresh=25, verbose=True)
 
@@ -218,8 +231,109 @@ def single_gpu_test(model,
                 device = 'cuda'
                 prev_forecast, density_image = forecastTest(forecast_test_dataset, model_forecast, device, hyper_params, density_image, recovery, forecast_dict, filtered_updated_ids,oxt_dict,best_of_n = 1)
                 
+            # """
+            # lane projection start
+            # """
+
+            # # velodyne_path : 라이다 파일 경로
+            # # calib         : calibration 정보
+            # # ll_seg_out    : 차선 정보
+
+            # lane_coord = []
+            # pc = copy.deepcopy(points_filtered)
+            # points_projection = project_lidar2img(img_ori, points_filtered, v2p_matrix)
+            # pc = pc[(points_projection[:,0]<1242) & (1<points_projection[:,0]) & (1<points_projection[:,1]) & (points_projection[:,1]<375)]
+            # points_projection = points_projection[(points_projection[:,0]<1242) & (1<points_projection[:,0]) & (1<points_projection[:,1]) & (points_projection[:,1]<375)]
+        
+            # # ll_seg_out : (384, 640), min=0, max=1
+            # LANE_IMG = np.array(ll_seg_out, dtype=np.float32)
+            # LANE_IMG = cv2.resize(LANE_IMG, (1242, 375))
+
+            # for idx,i in enumerate(points_projection):
+            #     if LANE_IMG[int(i[1]),int(i[0])]:
+            #         lane_coord.append(idx)
+            
+            # #density_image.shape : (704, 800)
+            # lane_xy = []
+            # for i in lane_coord:
+            #     lane_xy.append(list(pc[i,:2]))
+            # lane_xy.sort()
+            # lane_xy = np.array(lane_xy)
+
+            # global lane_0
+            # lane_0 = lane_xy[0:1]
+            # def lane_classification(idx, lane_number, max_lane):
+            #     global lane_t_num
+            #     if abs(lane_xy[idx,1] - lane_xy[idx+1,1]) <= 1.5:
+            #         if len(lane_xy) > idx+2:
+            #             globals()[f'lane_{lane_number}'] = np.vstack((globals()[f'lane_{lane_number}'], lane_xy[idx+1:idx+2]))
+            #             lane_classification(idx+1, lane_number, max_lane)
+
+            #     elif len(lane_xy) > idx+2:
+                    
+            #         s = 1
+            #         for i in range(max_lane+1):
+
+            #             if abs(globals()[f'lane_{i}'][-1, 1] - lane_xy[idx+1, 1]) <= 1.5:
+
+            #                 globals()[f'lane_{i}'] = np.vstack((globals()[f'lane_{i}'], lane_xy[idx+1:idx+2]))
+            #                 s = 0
+            #                 lane_number = i
+            #                 break
+            #         if s:
+            #             max_lane += 1
+            #             globals()[f'lane_{max_lane}'] = lane_xy[idx+1:idx+2]
+            #             lane_number = max_lane
+            #             lane_t_num = max_lane + 1
+            #         lane_classification(idx+1, lane_number, max_lane)
+
+            
+            
+
+            # lane_classification(0, 0, 0)
+            # LANE = []
+            # LANE_DICT = {}
+            
+            # for i in range(lane_t_num):
+            #     if len(globals()[f'lane_{i}']) >= len(lane_xy)//20:
+            #         LANE.append(globals()[f'lane_{i}'])
+            # for i in LANE:
+            #     LANE_DICT[abs(np.mean(i[:,1]))] = i
+            # LANE_OURS = [LANE_DICT.pop(min(LANE_DICT)), LANE_DICT.pop(min(LANE_DICT))]
+            
+        
+
+            # for lane_xy in LANE_OURS:
+            #     X = lane_xy[:,0]
+            #     y = lane_xy[:,1]
+            #     X = X.reshape(-1, 1)
+
+            #     # Fit line using all data
+            #     lr = linear_model.LinearRegression()
+            #     lr.fit(add_square_feature(X), y)
+
+            #     # Robustly fit linear model with RANSAC algorithm
+            #     ransac = linear_model.RANSACRegressor()
+            #     ransac.fit(add_square_feature(X), y)
+                
+
+            #     # Predict data of estimated models
+            #     line_X = np.arange(X.min(), X.max())[:, np.newaxis]
+            #     line_y_ransac = ransac.predict(add_square_feature(line_X))
+
+            #     # print(line_X) # (N, 1)
+            #     # print(line_y_ransac) # (N, )
+            #     line_coord = np.concatenate((line_X, line_y_ransac[:, np.newaxis]), axis=1)
+            #     line_coord_bev = center2ImageBev(line_coord).astype(np.int32)
+                
+            #     for i in range(line_coord_bev.shape[0]):
+            #         if i != 0:
+            #             density_image = cv2.line(density_image, (line_coord_bev[i-1][1], line_coord_bev[i-1][0]), (line_coord_bev[i][1], line_coord_bev[i][0]), color = (255, 0, 0), thickness=2)
+            #         else:
+            #             density_image = cv2.line(density_image, (line_coord_bev[i][1], density_image.shape[1]), (line_coord_bev[i][1], line_coord_bev[i][0]), color = (255, 0, 0), thickness=2)
+            
             cv2.imwrite(f'/opt/ml/images/3D_recursive_sort/image{i:06d}.png', density_image)
-            # cv2.imwrite(f'/opt/ml/images/3D_recursive_sort_detect/image{i:06d}.png', density_image_detect)
+            cv2.imwrite(f'/opt/ml/images/3D_recursive_sort_detect/image{i:06d}.png', density_image_detect)
             results.extend(result)
             bev_results.extend(total_det)
             batch_size = len(result)
