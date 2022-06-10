@@ -831,8 +831,7 @@ def correctCoord(src_info, dst_info, dst_bbox_x, dst_bbox_y, tracking_id, src_fr
     """
     src_utm = src_info[:2]
     
-    frame_diff = dst_frame - src_frame
-    dst_yaw = np.pi/2 - (dst_info[2] + (frame_diff)*src_info[2])/(frame_diff+1)
+    dst_yaw = np.pi/2 - dst_info[2]
     dst_utm = dst_info[:2]
 
     dst_rotation_mat = np.array([[np.cos(dst_yaw), -np.sin(dst_yaw)],
@@ -941,18 +940,21 @@ def addEgoMoving(forecast_dict, filtered_updated_ids, pf, oxt_dict):
     pf      : 예측한 12프레임의 좌표 (N, 12, 2)
     """
     recovered_points_total = []
+    recovered_points_total_lidar = []
     for i, point_forecast in enumerate(pf):
         id = filtered_updated_ids[i]
         src_frame = forecast_dict[id][0][1]
         cur_frame = forecast_dict[id][-1][1]
         src_info = oxt_dict[src_frame]
         dst_info = oxt_dict[cur_frame]
-        recovered_points = recoverCoord(src_info, dst_info, point_forecast) # (12, 2)
-        recovered_points = center2ImageBev(recovered_points)
+        recovered_points_lidar = recoverCoord(src_info, dst_info, point_forecast) # (12, 2)
+        recovered_points = center2ImageBev(recovered_points_lidar)
         recovered_points_total.append(recovered_points)
+        recovered_points_total_lidar.append(recovered_points_lidar)
 
     recovered_points_total = np.array(recovered_points_total) # (N, 12, 2)
-    return recovered_points_total
+    recovered_points_total_lidar = np.array(recovered_points_total_lidar)
+    return recovered_points_total, recovered_points_total_lidar
 
 def forecastTest(test_dataset, model, device, hyper_params, density_image, recovery, forecast_dict, filtered_updated_ids,oxt_dict, best_of_n = 1):
     model.eval()
@@ -990,16 +992,16 @@ def forecastTest(test_dataset, model, device, hyper_params, density_image, recov
             pf = predicted_future / (hyper_params["data_scale"]*10)
             pf += recovery
 
-            recovered_x = addEgoMoving(forecast_dict, filtered_updated_ids, x.reshape(-1, hyper_params["past_length"], 2), oxt_dict) 
-            recovered_pfs = addEgoMoving(forecast_dict, filtered_updated_ids, pf, oxt_dict)
+            recovered_x, recovered_x_lidar = addEgoMoving(forecast_dict, filtered_updated_ids, x.reshape(-1, hyper_params["past_length"], 2), oxt_dict) 
+            recovered_pfs, recovered_pfs_lidar = addEgoMoving(forecast_dict, filtered_updated_ids, pf, oxt_dict)
 
             for j in range(len(x)):
                 for k in range(8):
-                    cv2.circle(density_image, (int(recovered_x[j][k][1]), int(recovered_x[j][k][0])), 1,(0,255,0), 5)
+                    cv2.circle(density_image, (int(recovered_x[j][k][1]), int(recovered_x[j][k][0])), 1,(255,0,0), 5)
                 for k in range(8):
-                    cv2.circle(density_image, (int(recovered_pfs[j][k][1]), int(recovered_pfs[j][k][0])), 1,(0,0,255), 5)
+                    cv2.circle(density_image, (int(recovered_pfs[j][k][1]), int(recovered_pfs[j][k][0])), 1,(0,255,0), 5)
         
-        return pf, density_image
+        return pf, density_image, recovered_pfs_lidar, recovered_pfs
 
 
 
@@ -1488,7 +1490,7 @@ def drawBbox(box3d, trackers, rotated_points_detections, density_image, frame, t
     img_2d = density_image[np.newaxis, :, :].repeat(3, 0).transpose(1, 2, 0).astype(np.int32).copy()
 
     if trackers.shape[0]==0:
-        return img_2d
+        return img_2d, img_2d
 
     ids = trackers[:, 5].reshape(-1).astype(np.int32)
     scores = trackers[:, 7].reshape(-1).astype(np.float64)
@@ -2207,7 +2209,12 @@ def save_pcd(filename, pc_color):
     f.close()
 
 def add_square_feature(X):
-    X = np.concatenate([(X**2).reshape(-1,1), X], axis=1)
+    X = np.concatenate([(X).reshape(-1,1), X], axis=1)
     return X
 
+def checkWarning(point_x, point_y, l_a, l_b, r_a, r_b, distance):
+    if point_x <= distance and  l_a * point_x + l_b >= point_y and point_y >= r_a * point_x + r_b:
+        return True
+    else:
+        return False
 

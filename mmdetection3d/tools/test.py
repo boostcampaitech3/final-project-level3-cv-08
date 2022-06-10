@@ -340,7 +340,9 @@ def main():
 
     images_2D = sorted(glob.glob(os.path.join(img_root, '2D_recursive_sort', '*.png')))
     images_3D = sorted(glob.glob(os.path.join(img_root, '3D_recursive_sort', '*.png')))
-    for (img_2d, img_3d) in tqdm(zip(images_2D, images_3D), total=len(images_2D)):  
+    for (img_2d, img_3d) in tqdm(zip(images_2D, images_3D), total=len(images_2D)):
+    
+        
         # Here 297 is the number of frames in the dataset. You need to make the appropriate changes
         frame_2d = np.array(Image.open(img_2d).resize((1280, 640)))
         frame_3d = np.array(Image.open(img_3d).resize((800, 640)))
