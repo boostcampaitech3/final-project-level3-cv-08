@@ -11,6 +11,8 @@ import numpy as np
 from urllib import request
 import ffmpeg
 import cv2
+import time
+import tempfile
 
 import urllib.request
 
@@ -37,21 +39,21 @@ scene_c = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
 
 video_a = openVid("https://storage.googleapis.com/pre-saved/Video/Video_1.mp4", "data/Video_A.mp4")
 video_b = openVid("https://storage.googleapis.com/pre-saved/Video/Video_B.mp4", "data/Video_B.mp4")
-result_video_b = openVid("https://storage.googleapis.com/pre-saved/Video/Video_B.mp4", "data/Video_B.mp4")
+result_video_b = openVid("https://storage.googleapis.com/pre-saved/Video/LANE_result_B.mp4", "data/result_Video_B.mp4")
 video_c = openVid("https://storage.googleapis.com/pre-saved/Video/Video_C.mp4", "data/Video_C.mp4")
-result_video_c = openVid("https://storage.googleapis.com/pre-saved/Video/Video_C.mp4", "data/Video_C.mp4")
+result_video_c = openVid("https://storage.googleapis.com/pre-saved/Video/LANE_result_C.mp4", "data/result_Video_C.mp4")
 
-fusion_scenes_a = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
-fusion_scenes_b = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
-fusion_scenes_c = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
+fusion_scenes_a = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
+fusion_scenes_b = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
+fusion_scenes_c = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
 
-fusion_result_a = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
-fusion_result_b = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
-fusion_result_c = Image.open('/opt/ml/bdd_for_yolop/bdd100k/images/100k/test/fcd22a1c-d019a362.jpg')
+fusion_result_a = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
+fusion_result_b = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
+fusion_result_c = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
 
-fusion_video_a = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
-fusion_video_b = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
-fusion_video_c = open('/opt/ml/final-project-level3-cv-08/YOLOP/inference/videos/1.mp4', 'rb')
+fusion_video_a = openVid("https://storage.googleapis.com/pre-saved/Video/Video_C.mp4", "data/Video_C.mp4")
+fusion_video_b = openVid("https://storage.googleapis.com/pre-saved/Video/Video_C.mp4", "data/Video_C.mp4")
+fusion_video_c = openVid("https://storage.googleapis.com/pre-saved/Video/Video_C.mp4", "data/Video_C.mp4")
 
 Scenes = {'Scene A': scene_a, 'Scene B': scene_b, 'Scene C': scene_c}
 Fusion_Scenes = {'Scene A': fusion_scenes_a, 'Scene B': fusion_scenes_b, 'Scene C': fusion_scenes_c}
@@ -73,16 +75,17 @@ def main():
     st.caption("")
     st.caption("")
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col3, col4 = st.columns(3)
 
     with col1:
         selected_item = st.radio('Camera or Fusion(Camera & Lidar)', ('Camera', 'Fusion(Camera & Lidar)'))
     if selected_item == 'Fusion(Camera & Lidar)':
         st.error("The 3D Model is preparing...")
-    with col2:
-        region = st.radio('Region', ('USA', 'Korea'))
     with col3:
-        image_or_video = st.radio('Image or Video', ('Image', 'Video'))
+        if selected_item == "Camera":
+            image_or_video = st.radio('Image or Video', ('Image', 'Video'))
+        else:
+            image_or_video = st.radio('Image or Video', ('Video',))
 
     if image_or_video == 'Image':
         with col4:
@@ -160,7 +163,10 @@ def main():
 
     elif image_or_video == 'Video':
         with col4:
-            option = st.radio('Please choose or upload video', ('Video A', 'Video B', 'Video C', 'Upload'))
+            if selected_item == "Camera":
+                option = st.radio('Please choose or upload video', ('Video A', 'Video B', 'Video C', 'Upload'))
+            else:
+                option = st.radio('Please choose or upload video', ('Video A', 'Video B', 'Video C'))
         st.info('Video A는 직접 모델을 거쳐서 시연되고 Video B, C는 결과물만 보여줍니다.')
         if option == 'Upload':
             st.info("300 frame 이하의 영상만 inference 가능합니다.")
@@ -207,7 +213,7 @@ def main():
 
             elif selected_item == 'Camera':
                 if option != 'Upload':
-                    with st.spinner(text='In progress...'):
+                    with st.spinner(text="Inference 진행중... 최대 3분 30초 정도 걸릴 수 있습니다"):
                         if option == 'Video A':
                             response = requests.post(f"http://localhost:8001/prepared_order/{option}")
                             print_image_video_result(response)
@@ -219,7 +225,7 @@ def main():
                                 st.video(video_bytes)
                             
                 else:
-                    with st.spinner(text='In progress...'):
+                    with st.spinner(text="Inference 진행중... 최대 5분 정도 걸릴 수 있습니다"):
                         if files:
                             #st.error("Preparing...")
                             #########################################################################
@@ -237,8 +243,6 @@ def main():
                             i = 0
                             while vf.isOpened():
                                 ret, frame = vf.read()
-                                #if i % 2 == 0:
-                                # if frame is read correctly ret is True
                                 stframe.write(f"{i}번째 frame 저장중....")
                                 if not ret:
                                     print("Can't receive frame (stream end?). Exiting ...")
@@ -250,9 +254,8 @@ def main():
                                 st.error("300 프레임 이상의 영상은 inference 불가능합니다!")
                             else:
                                 stframe.write("영상 저장 완료!")
-                            #response = requests.post(f"http://localhost:8001/order", files=files)
-                            response = requests.post(f"http://localhost:8001/prepared_order/{option}")
-                            print_image_video_result(response)
+                                response = requests.post(f"http://localhost:8001/prepared_order/{option}")
+                                print_image_video_result(response)
                         else:
                             st.error("Please upload image!!")
 
