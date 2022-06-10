@@ -157,12 +157,11 @@ class PFNLayer(nn.Module):
 
         Returns:
             torch.Tensor: Features of Pillars.
-        """
+        """        
         x = self.linear(inputs)
         x = self.norm(x.permute(0, 2, 1).contiguous()).permute(0, 2,
                                                                1).contiguous()
         x = F.relu(x)
-
         if self.mode == 'max':
             if aligned_distance is not None:
                 x = x.mul(aligned_distance.unsqueeze(-1))

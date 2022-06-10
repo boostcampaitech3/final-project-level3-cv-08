@@ -21,18 +21,19 @@ def plot_img_and_mask(img, mask, index,epoch,save_dir):
     # plt.show()
     plt.savefig(save_dir+"/batch_{}_{}_seg.png".format(epoch,index))
 
-def show_seg_result(img, result, index, epoch, save_dir=None, is_ll=False,palette=None,is_demo=False,is_gt=False):
+def show_seg_result(img, img_ori_h, img_ori_w, result, index, epoch, save_dir=None, is_ll=False,palette=None,is_demo=False,is_gt=False):
     # img = mmcv.imread(img)
     # img = img.copy()
     # seg = result[0]
     if palette is None:
         palette = np.random.randint(
-                0, 255, size=(3, 3))
+                0, 255, size=(4, 3))
     palette[0] = [0, 0, 0]
-    palette[1] = [0, 255, 0]
-    palette[2] = [255, 0, 0]
+    palette[1] = [255, 0, 0]
+    palette[2] = [0, 0, 255]
+    palette[3] = [255, 255, 255]
     palette = np.array(palette)
-    assert palette.shape[0] == 3 # len(classes)
+    assert palette.shape[0] == 4 # len(classes)
     assert palette.shape[1] == 3
     assert len(palette.shape) == 2
     
@@ -47,7 +48,9 @@ def show_seg_result(img, result, index, epoch, save_dir=None, is_ll=False,palett
         #     color_area[result[0] == label, :] = color
 
         color_area[result[0] == 1] = [0, 255, 0]
-        color_area[result[1] ==1] = [255, 0, 0]
+        color_area[result[1] == 1] = [255, 0, 0]
+        #color_area[result[1] == 2] = [0, 0, 255]
+        #color_area[result[1] == 3] = [255, 255, 255]
         color_seg = color_area
 
     # convert to BGR
@@ -57,7 +60,7 @@ def show_seg_result(img, result, index, epoch, save_dir=None, is_ll=False,palett
     img[color_mask != 0] = img[color_mask != 0] * 0.5 + color_seg[color_mask != 0] * 0.5
     # img = img * 0.5 + color_seg * 0.5
     img = img.astype(np.uint8)
-    img = cv2.resize(img, (1280,720), interpolation=cv2.INTER_LINEAR)
+    img = cv2.resize(img, (img_ori_w,img_ori_h), interpolation=cv2.INTER_LINEAR)
 
     if not is_demo:
         if not is_gt:
@@ -78,13 +81,12 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     color = color or [random.randint(0, 255) for _ in range(3)]
     c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
     cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
-    # if label:
-    #     tf = max(tl - 1, 1)  # font thickness
-    #     t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
-    #     c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
-    #     cv2.rectangle(img, c1, c2, color, -1, cv2.LINE_AA)  # filled
-    #     print(label)
-        # cv2.putText(img, label, (c1[0], c1[1] - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
+    if label:
+        tf = max(tl - 1, 1)  # font thickness
+        t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
+        c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
+        cv2.rectangle(img, c1, c2, color, -1, cv2.LINE_AA)  # fille
+        cv2.putText(img, label, (c1[0], c1[1] - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
 
 
 if __name__ == "__main__":

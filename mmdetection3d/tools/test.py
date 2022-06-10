@@ -4,8 +4,10 @@ import os
 import warnings
 import sys
 from os import path
-
+import pickle
+import cv2
 sys.path.insert(0, path.abspath('..'))
+from tqdm import tqdm
 
 import mmcv
 import torch
@@ -36,6 +38,27 @@ try:
 except ImportError:
     from mmdet3d.utils import compat_cfg
 
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+import sys
+from torch.utils.data import DataLoader
+import argparse
+import copy
+sys.path.append("/PECNet/utils/")
+import matplotlib.pyplot as plt
+import numpy as np
+from models import *
+from social_utils_add import *
+import shutil
+import yaml
+import cv2
+from skimage import io
+import glob
+import time
+
 ###########################################
 from lib.config import cfgs
 from lib.models import get_net
@@ -47,13 +70,14 @@ def parse_args():
     parser.add_argument('config', help='test config file path for 3D')
     parser.add_argument('checkpoint', help='checkpoint file for 3D')
     parser.add_argument('checkpoint_YOLOP', help='checkpoint file path for YOLOP')
+    parser.add_argument('--data-root', default='/opt/ml/kitti_testing_13/')
     parser.add_argument("--max_age", 
                         help="Maximum number of frames to keep alive a track without associated detections.", 
-                        type=int, default=2)
+                        type=int, default=1)
     parser.add_argument("--min_hits", 
                         help="Minimum number of associated detections before track is initialised.", 
                         type=int, default=1)
-    parser.add_argument("--centerpoint_threshold", help="Minimum centerpoint for match.", type=float, default=3.0)
+    parser.add_argument("--centerpoint_threshold", help="Minimum centerpoint for match.", type=float, default=2.5)
     parser.add_argument('--out', help='output result file in pickle format')
     parser.add_argument(
         '--fuse-conv-bn',
@@ -129,6 +153,8 @@ def parse_args():
         default='none',
         help='job launcher')
     parser.add_argument('--local_rank', type=int, default=0)
+    parser.add_argument('--num_trajectories', '-nt', default=1)
+    parser.add_argument('--load_file', '-lf', default="PECNET_car_model.pt")
     args = parser.parse_args()
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
@@ -145,7 +171,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-
+    
     assert args.out or args.eval or args.format_only or args.show \
         or args.show_dir, \
         ('Please specify at least one operation (save/eval/format/show the '
@@ -159,9 +185,11 @@ def main():
         raise ValueError('The output file must be a pkl file.')
 
     cfg = Config.fromfile(args.config)
+    cfg.data.test.data_root = args.data_root
+    cfg.data_root = args.data_root
+    
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
-
     cfg = compat_cfg(cfg)
 
     # set multi-process settings
@@ -250,9 +278,37 @@ def main():
         model_2d.cpu()
     """
     """
+
+
+    """
+    >>>>>>>>>>>>>>>>>>>>>>> forecast
+    """
+    device = 'cuda' if torch.cuda.is_available else 'cpu'
+    checkpoint_forecast = torch.load('/opt/ml/final-project-level3-cv-08/mmdetection3d/tools/PECNet/saved_models/{}'.format(args.load_file), map_location=device)
+    hyper_params = checkpoint_forecast["hyper_params"]
+
+    model_forecast = PECNet(hyper_params["enc_past_size"], hyper_params["enc_dest_size"], hyper_params["enc_latent_size"], hyper_params["dec_size"], hyper_params["predictor_hidden_size"], hyper_params['non_local_theta_size'], hyper_params['non_local_phi_size'], hyper_params['non_local_g_size'], hyper_params["fdim"], hyper_params["zdim"], hyper_params["nonlocal_pools"], hyper_params['non_local_dim'], hyper_params["sigma"], hyper_params["past_length"], hyper_params["future_length"])
+    model_forecast = model_forecast.double().to(device)
+    model_forecast.load_state_dict(checkpoint_forecast["model_state_dict"])
+
+    """
+    """
+
+    """
+    remove saved images
+    """
+    if os.path.exists('/opt/ml/images/3D_recursive_sort'):
+        shutil.rmtree('/opt/ml/images/3D_recursive_sort')
+    if os.path.exists('/opt/ml/images/2D_recursive_sort'):
+        shutil.rmtree('/opt/ml/images/2D_recursive_sort')
+    os.makedirs('/opt/ml/images/3D_recursive_sort')
+    os.makedirs('/opt/ml/images/2D_recursive_sort')
+
+
     if not distributed:
         model = MMDataParallel(model, device_ids=cfg.gpu_ids)
-        outputs = single_gpu_test(model, model_2d, data_loader, args, cfg)
+        outputs, bev_outputs = single_gpu_test(model, model_2d, model_forecast, hyper_params, data_loader, args, cfg)
+        # bev_outputs : (N, 7) -> x, y, rot, h, w, score, cls_id
     else:
         model = MMDistributedDataParallel(
             model.cuda(),
@@ -260,25 +316,44 @@ def main():
             broadcast_buffers=False)
         outputs = multi_gpu_test(model, data_loader, args.tmpdir,
                                  args.gpu_collect)
-    # rank, _ = get_dist_info()
-    # if rank == 0:
-    #     if args.out:
-    #         print(f'\nwriting results to {args.out}')
-    #         mmcv.dump(outputs, args.out)
-    #     kwargs = {} if args.eval_options is None else args.eval_options
-    #     if args.format_only:
-    #         dataset.format_results(outputs, **kwargs)
-    #     if args.eval:
-    #         eval_kwargs = cfg.get('evaluation', {}).copy()
-    #         # hard-code way to remove EvalHook args
-    #         for key in [
-    #                 'interval', 'tmpdir', 'start', 'gpu_collect', 'save_best',
-    #                 'rule'
-    #         ]:
-    #             eval_kwargs.pop(key, None)
-    #         eval_kwargs.update(dict(metric=args.eval, **kwargs))
-    #         print(dataset.evaluate(outputs, **eval_kwargs))
+    
+    with open(args.out, 'wb') as file:
+        pickle.dump(outputs, file)
+    
+    with open('/opt/ml/outputs/output.pkl', 'wb') as f:
+        pickle.dump(bev_outputs, f)
+
+    from datetime import datetime
+    from PIL import Image
+    
+    now = datetime.now()
+    img_root = '/opt/ml/images'
+    base_path = os.path.join('/opt/ml/output_video', cfg.data_root.split('/')[-1]+ '_' + str(now.date()) + '_' +  str(now.time()))
+    if not os.path.exists(base_path):
+        print("created ", base_path)
+        os.makedirs(base_path)
+
+    video_save_path = os.path.join(base_path, 'output.avi')
+    fps = 10
+    fourcc = cv2.VideoWriter_fourcc(*'DIVX')
+    videoWriter = cv2.VideoWriter(video_save_path,fourcc,fps,(2080,640))
+
+    images_2D = sorted(glob.glob(os.path.join(img_root, '2D_recursive_sort', '*.png')))
+    images_3D = sorted(glob.glob(os.path.join(img_root, '3D_recursive_sort', '*.png')))
+    for (img_2d, img_3d) in tqdm(zip(images_2D, images_3D), total=len(images_2D)):
+    
+        
+        # Here 297 is the number of frames in the dataset. You need to make the appropriate changes
+        frame_2d = np.array(Image.open(img_2d).resize((1280, 640)))
+        frame_3d = np.array(Image.open(img_3d).resize((800, 640)))
+        
+        concat_frame = np.concatenate([frame_2d, frame_3d], axis=1)
+        concat_frame = concat_frame[:, :, [2, 1, 0]]
+        videoWriter.write(concat_frame)
+    videoWriter.release()
 
 
 if __name__ == '__main__':
+    print()
+    print(sys.path)
     main()

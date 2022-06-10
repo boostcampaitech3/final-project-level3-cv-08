@@ -394,6 +394,7 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
         Returns:
             list[tuple]: Prediction resultes of batches.
         """
+        
         assert len(cls_scores) == len(bbox_preds)
         assert len(cls_scores) == len(dir_cls_preds)
         num_levels = len(cls_scores)
@@ -466,6 +467,7 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
 
             cls_score = cls_score.permute(1, 2,
                                           0).reshape(-1, self.num_classes)
+                                          
             if self.use_sigmoid_cls:
                 scores = cls_score.sigmoid()
             else:
