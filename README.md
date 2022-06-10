@@ -20,7 +20,7 @@
 :-:|:-:|:-:|:-:
 ![image6](https://user-images.githubusercontent.com/85532197/172898225-6b095eff-3b1d-4930-b42b-876b29214659.png) | ![image12](https://user-images.githubusercontent.com/85532197/172898232-d1405656-3b21-4f61-83e2-394d79c151e8.png) | ![image8](https://user-images.githubusercontent.com/85532197/172898238-ae6e984a-6927-4046-9430-f89bcf775cc1.png) | ![image10](https://user-images.githubusercontent.com/85532197/172898234-878b5509-66bd-4bf2-a28d-45da58635bfb.png)
 [Github](https://github.com/zzundi) | [Github](https://github.com/minakusi) | [Github](https://github.com/j8n17) | [Github](https://github.com/haymrpig) 
-이메일 | 이메일 | j3837301@gmail.com | 이메일
+dlwnsgur0803@gmail.com | 이메일 | j3837301@gmail.com | 이메일
 
 ### 🔅 Contribution  
 - `이준혁` 3D Detection, Lane Projection  
