@@ -23,16 +23,17 @@
 dlwnsgur0803@gmail.com | 이메일 | j3837301@gmail.com | 이메일
 
 ### 🔅 Contribution  
-- `이준혁` 3D Detection, Lane Projection  
-- `윤서연` Forecasting, Product Serving  
-- `김 준` 2D Detection, Segmentation, Product Serving
-- `이재홍` 3D Detection, 3D Tracking, Model Concatenation
+- `이준혁` - 3D Detection, Lane Projection  
+- `윤서연` - Forecasting, Product Serving  
+- `김 준` - 2D Detection, Segmentation, Product Serving
+- `이재홍` - 3D Detection, 3D Tracking, Model Concatenation
 
 <br/>
 
 ### ⚙ Development Environment
 
 - 협업 툴 : GitHub, WandB, Notion
+	- 협업을 위해 노션 칸반보드 적극활용 (https://pinto-throne-474.notion.site/186f4c294fd44320a8270aa2c7ddd96c)
 - 개발 환경
   - OS : Ubuntu 18.04
   - GPU : V100
@@ -40,7 +41,63 @@ dlwnsgur0803@gmail.com | 이메일 | j3837301@gmail.com | 이메일
   - dependency : Pytorch 1.7.1
 
 # Project Outline  
+## 프로젝트 주제
 
+카메라를 이용한 자율주행을 상품화한 테슬라의 등장으로 자율주행 시장은 더욱 활성화가 되어 가고 있습니다.
+
+하지만, 카메라가 담을 수 있는 정보에는 한계가 존재하여, 자율주행 중인 테슬라 차량이 큰 트레일러 차량을 들이 박는 사고가 종종 일어났습니다.
+객체의 위치정보를 보다 정확하게 알 수 있는 라이다를 이용하여 카메라 정보와 융합하여
+사용한다면, 보다 안전한 자율주행이 가능할 것입니다.
+
+이 프로젝트에서는 라이다 데이터와 카메라 데이터를 함께 이용하여 객체 추정, 이동 예측을 통하여 주행 차량 앞으로 보행자나 차량이 끼어드는 것을 경고하여 보다 안전한 자율주행을 위한 서비스를 제작하였습니다.
+
+## 기대 효과
+<img src='https://user-images.githubusercontent.com/85532197/173238024-e62e2925-226c-4576-9926-602ba74109dd.png' width=50%><img src='https://user-images.githubusercontent.com/85532197/173237976-7436d213-2bc7-4a6e-8f27-aa5470e70200.png' width=50%>
+
+사람의 눈으로는 모든 상황에 대해서 한눈에 확인할 수 없습니다. 만약 딥러닝을 통해 사람을 보조할 수 있다면 사고의 위험성은 크게 줄어들 것입니다. 
+
+라이다, 카메라 데이터를 통해서 detection, tracking, forecasting을 통해 위험한 상황을 예측하고 사용자에게 경고해줌으로써 사고를 줄일 수 있습니다. 
+
+또한 더 나아가서 비단 경고 뿐 아니라 실제 차량 제어를 통해 자율주행 level 4까지 나아갈 수 있을 것입니다.
+
+## Dataset
+- **KITTI Dataset**
+    - **LIDAR**
+        
+        3D point cloud 데이터
+        
+        > 3D detection을 위한 세개의 클래스 (`Pedestrian`, `Car`, `Cyclist`)
+        > 
+    - **CAMERA**
+        
+        2D image 데이터
+        
+        > 2D detection을 위한 데이터
+        > 
+    - **GPS / IMU**
+        
+        GPS와 IMU 정보
+        
+        > ego 차량의 이동량을 파악하기 위한 GPS와 IMU 데이터
+- **BDD Dataset**
+    - **CAMERA**
+        
+        2D image 데이터
+        
+        > 2D 차선 및 주행가능영역 Segmentation 데이터
+        >
+## Model Structure
+![Image](https://user-images.githubusercontent.com/85532197/173237401-fde65883-2410-4883-beb2-ee03e0df59f8.png)
+- 2D - YOLOP (Detection - YOLOv5, Segmentation - Seg head 2개 추가)
+- 3D - Pointpillars
+- Tracking - Sort
+- Forecasting - PECNet
+
+## Demo Page Structure
+![Image](https://user-images.githubusercontent.com/85532197/173237405-07fcaf37-7356-4d1d-b636-6ee4851f45ad.png)
+- Frontend - Streamlit
+- ackend - FastAPI
+- Storage - Google Cloud Storage
 
 <br/>
 
@@ -51,30 +108,40 @@ dlwnsgur0803@gmail.com | 이메일 | j3837301@gmail.com | 이메일
 
 
 ```
-├── 📂 detectron2
-│   ├── 📝 train.py
-│   ├── 📝 inference.py
-│   └── etc
-├── 📂 mmdetection
-│   ├── 📂 configs
-│   │   └── 📂 custom
-│   ├── 📂 tools
-│   │   ├── 📝 train.py
-│   │   ├── 📝 test.py
-│   │   └── 📝 inference.py
-│   └── etc
-├── 📂 yolov5
-│   ├── 📝 train.py
-│   ├── 📝 detect.py
-│   └── etc
-└── 📂 custom analysis tools
-    ├── 📝 S-Kfold.py
-		├── 📝 pseudo_labeling.py
-    ├── 📝 analysis.ipynb
-		├── 📝 ensemble.ipynb
-		└── etc
+├── 📂 serving
+│   ├── 📂 app
+│   │   ├── 📝 __main__.py
+│   │   ├── 📝 frontend.py
+│   │   ├── 📝 main.py
+│   │   └── 📝 model.py
+│   ├── 📂 data
+│   │   └── 📝 pth files
+│   ├── 📂 deep_sort
+│   |	├── 📂 training
+│   |	└── 📂 testing
+│   ├── 📂 utils
+|   └── 📂 lib_bdd
+└── 📂 YOLOP
+|   ├── 📂 lib
+|   ├── 📂 tools
+|   |   ├── 📝 demo.py
+|   |   ├── 📝 train.py
+|   |   └── 📝 test.py
+|   └── etc
+└── 📂 mmdetection3d
+    ├── 📂 tools
+    |   ├── 📂 custom_tools
+    |   |   └── 📝 make_videos.ipynb
+    |   ├── 📂 utils
+    |   |   └── 📝 utils.py
+    |   ├── 📝 train.py
+    |   └── 📝 test.py
+    └── etc
 ```
-
+- 프로젝트 구조
+    - Serving 폴더에는 streamlit-fastapi로 생성한 데모 사이트에 대한 코드가 존재
+    - YOLOP 폴더에는 2D detection 및 semantic segmentation에 대한 코드가 존재
+    - mmdetection3d 폴더에는 3D 모델, 2D 모델, forecasting을 합친 코드가 존재
 
 
 
