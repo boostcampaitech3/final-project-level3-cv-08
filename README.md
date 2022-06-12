@@ -99,10 +99,11 @@ dlwnsgur0803@gmail.com | 이메일 | j3837301@gmail.com | 이메일
 - ackend - FastAPI
 - Storage - Google Cloud Storage
 
+# Demo
+![FUSION_result_A](https://user-images.githubusercontent.com/85532197/173238845-7198f4c7-1d8b-4f21-8906-89ce3f896396.gif)
+
+
 <br/>
-
-# Solution
-
 
 # Project Structure
 
