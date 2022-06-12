@@ -139,9 +139,9 @@ dlwnsgur0803@gmail.com | 이메일 | j3837301@gmail.com | 이메일
     └── etc
 ```
 - 프로젝트 구조
-    - Serving 폴더에는 streamlit-fastapi로 생성한 데모 사이트에 대한 코드가 존재
-    - YOLOP 폴더에는 2D detection 및 semantic segmentation에 대한 코드가 존재
-    - mmdetection3d 폴더에는 3D 모델, 2D 모델, forecasting을 합친 코드가 존재
+    - Serving - Streamlit-FastAPI로 생성한 데모 사이트에 대한 코드 존재
+    - YOLOP - 2D Detection 및 Semantic Segmentation에 대한 코드 존재
+    - mmdetection3d - 2D Detection & Segmentation, 3D Detection, Tracking, Forecasting을 합친 코드 존재
 
 
 
