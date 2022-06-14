@@ -254,6 +254,7 @@ def predict_from_video(model: MCnet, video_path: str, video_bytes = None):
 
     # Wait for sub-process to finish
     process.wait()
+    process.terminate()
 
     print('Results saved to %s' % Path('/opt/ml/server_disk'))
     print('Done. (%.3fs)' % (time.time() - t0))

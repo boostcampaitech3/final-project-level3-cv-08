@@ -43,24 +43,25 @@ result_video_b = openVid("https://storage.googleapis.com/pre-saved/Video/LANE_re
 video_c = openVid("https://storage.googleapis.com/pre-saved/Video/Video_C.mp4", "data/Video_C.mp4")
 result_video_c = openVid("https://storage.googleapis.com/pre-saved/Video/LANE_result_C.mp4", "data/result_Video_C.mp4")
 
-fusion_scenes_a = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
-fusion_scenes_b = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
+fusion_scenes_a = openVid("https://storage.googleapis.com/pre-saved/Video/fusion_video_a.mp4", "data/fusion_Video_A.mp4")
+fusion_scenes_b = openVid("https://storage.googleapis.com/pre-saved/Video/fusion_video_b.mp4", "data/fusion_Video_B.mp4")
 fusion_scenes_c = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
 
 fusion_result_a = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
 fusion_result_b = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
 fusion_result_c = openImg('https://storage.googleapis.com/pre-saved/Image/Image_C.jpg')
 
-fusion_video_a = openVid("https://storage.googleapis.com/pre-saved/Video/Video_C.mp4", "data/Video_C.mp4")
-fusion_video_b = openVid("https://storage.googleapis.com/pre-saved/Video/Video_C.mp4", "data/Video_C.mp4")
+fusion_video_a = openVid("https://storage.googleapis.com/pre-saved/Video/fusion_result_a.mp4", "data/fusion_result_Video_A.mp4")
+fusion_video_b = openVid("https://storage.googleapis.com/pre-saved/Video/fusion_result_b.mp4", "data/fusion_result_Video_B.mp4")
 fusion_video_c = openVid("https://storage.googleapis.com/pre-saved/Video/Video_C.mp4", "data/Video_C.mp4")
 
 Scenes = {'Scene A': scene_a, 'Scene B': scene_b, 'Scene C': scene_c}
-Fusion_Scenes = {'Scene A': fusion_scenes_a, 'Scene B': fusion_scenes_b, 'Scene C': fusion_scenes_c}
-Fusion_Result = {'Scene A': fusion_result_a, 'Scene B': fusion_result_b, 'Scene C': fusion_result_c}
 Videos = {'Video A': video_a, 'Video B': video_b, 'Video C': video_c}
+
+Fusion_Scenes = {'Video A': fusion_scenes_a, 'Video B': fusion_scenes_b, 'Video C': fusion_scenes_c}
 Fusion_Video_Result = {'Video A': fusion_video_a, 'Video B': fusion_video_b, 'Video C': fusion_video_c}
 
+Fusion_Result = {'Scene A': fusion_result_a, 'Scene B': fusion_result_b, 'Scene C': fusion_result_c}
 inf_time_b = 0.0
 inf_time_c = 0.0
 result_Videos = {'Video B': (result_video_b, inf_time_b), 'Video C': (result_video_c, inf_time_c)}
@@ -79,8 +80,6 @@ def main():
 
     with col1:
         selected_item = st.radio('Camera or Fusion(Camera & Lidar)', ('Camera', 'Fusion(Camera & Lidar)'))
-    if selected_item == 'Fusion(Camera & Lidar)':
-        st.error("The 3D Model is preparing...")
     with col3:
         if selected_item == "Camera":
             image_or_video = st.radio('Image or Video', ('Image', 'Video'))
@@ -166,8 +165,8 @@ def main():
             if selected_item == "Camera":
                 option = st.radio('Please choose or upload video', ('Video A', 'Video B', 'Video C', 'Upload'))
             else:
-                option = st.radio('Please choose or upload video', ('Video A', 'Video B', 'Video C'))
-        st.info('Video A는 직접 모델을 거쳐서 시연되고 Video B, C는 결과물만 보여줍니다.')
+                option = st.radio('Please choose or upload video', ('Video A', 'Video B'))
+        
         if option == 'Upload':
             st.info("300 frame 이하의 영상만 inference 가능합니다.")
             if selected_item == 'Camera':
@@ -184,8 +183,13 @@ def main():
                 uploaded_lidar = st.file_uploader("Upload an lidar", type=["bin", "bcd.bin", "bcd"], accept_multiple_files=True)
         
         else:
-            video_bytes = Videos[option].read()
-            st.video(video_bytes)
+            if selected_item == 'Camera':
+                st.info('Video A는 직접 모델을 거쳐서 시연되고 Video B, C는 결과물만 보여줍니다.')
+                video_bytes = Videos[option].read()
+                st.video(video_bytes)
+            else:
+                video_bytes = Fusion_Scenes[option].read()
+                st.video(video_bytes)
             
         
         def print_both_video_result(response):
@@ -275,3 +279,34 @@ def authenticate(password) -> bool:
 #    st.error('The password is invalid.')
 
 main()
+
+footer="""<style>
+a:link , a:visited{
+color: blue;
+background-color: transparent;
+text-decoration: underline;
+}
+
+a:hover,  a:active {
+color: red;
+background-color: transparent;
+text-decoration: underline;
+}
+body{
+    height:100%;
+}
+.footer {
+position: fixed;
+left: 0;
+bottom: 0;
+width: 100%;
+background-color: rgba( 255, 255, 255, 0.5 );
+color: black;
+text-align: center;
+}
+</style>
+<div class="footer">
+<p>Developed by <span style='color:red'>DrivingYouth</span></p> <a href="https://github.com/boostcampaitech3/final-project-level3-cv-08" target="_blank"><img src='https://github.githubassets.com/images/modules/logos_page/Octocat.png' width = '50px'/></a>
+</div>
+"""
+st.markdown(footer,unsafe_allow_html=True)
